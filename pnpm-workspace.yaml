@@ -2,3 +2,10 @@ packages:
   - 'shared'
   - 'server'
   - 'client'
+
+# Colyseus 0.16.25 tiene un bug de publicación (greeting-banner con workspace:^).
+# Los fijamos acá para pnpm 10+ (que ya no lee "pnpm.overrides" de package.json)
+# y en package.json para pnpm 9 (dev/Vercel). El lockfile matchea con ambos.
+overrides:
+  '@colyseus/core': 0.16.24
+  '@colyseus/greeting-banner': 2.0.6
