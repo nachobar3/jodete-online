@@ -1,0 +1,48 @@
+[Unit]
+Description=Jodete game server (Colyseus)
+Documentation=https://github.com/nachobar3/jodete-online
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jodete
+Group=jodete
+WorkingDirectory=/srv/jodete
+Environment=NODE_ENV=production
+Environment=HOME=/srv/jodete
+Environment=PORT=2567
+# El server escucha SOLO en localhost; Tailscale Funnel lo expone al mundo con TLS.
+ExecStart=/usr/bin/pnpm --filter @jodete/server start
+Restart=on-failure
+RestartSec=3
+
+# ---------- Endurecimiento / sandbox ----------
+# Si el proceso se comprometiera, queda encerrado acá: no llega a tu home ni al resto del SO.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/jodete
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Node/tsx usan JIT (memoria ejecutable), por eso MemoryDenyWriteExecute queda en false.
+MemoryDenyWriteExecute=false
+
+# ---------- Límites de recursos (que un DoS no voltee la máquina entera) ----------
+MemoryMax=512M
+CPUQuota=150%
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

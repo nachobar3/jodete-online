@@ -1,0 +1,14 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+.playwright/
+.DS_Store
+*.log
+.env
+.env.local
+.vercel
+
+# design-loop: artefactos generados (media pesada + db, se regeneran)
+design-loop/iterations/
+design-loop/*.db

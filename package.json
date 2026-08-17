@@ -1,0 +1,24 @@
+{
+  "name": "jodete",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Jodete — juego de cartas multiplayer online de velocidad",
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"pnpm dev:server\" \"pnpm dev:client\"",
+    "dev:server": "pnpm --filter @jodete/server dev",
+    "dev:client": "pnpm --filter @jodete/client dev",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "concurrently": "^9.1.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "@colyseus/core": "0.16.24",
+      "@colyseus/greeting-banner": "2.0.6"
+    }
+  }
+}
