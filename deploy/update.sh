@@ -13,6 +13,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 echo "==> git pull"
+git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 git -C "$APP_DIR" pull --ff-only
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
