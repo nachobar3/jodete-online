@@ -1,5 +1,7 @@
 # Jodete
 
+🎮 **Jugá online: https://jodete.vercel.app**
+
 Juego de cartas multiplayer online de **velocidad** (2–8 jugadores), con acciones
 fuera de turno resueltas por orden de llegada al servidor. Ver [`DESIGN.md`](./DESIGN.md)
 para el diseño completo (reglas, modelo de concurrencia, milestones).
