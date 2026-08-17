@@ -18,7 +18,7 @@ git -C "$APP_DIR" pull --ff-only
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
 echo "==> pnpm install"
-( cd "$APP_DIR" && sudo -u "$SERVICE_USER" env HOME="$APP_DIR" pnpm install --frozen-lockfile )
+( cd "$APP_DIR" && sudo -u "$SERVICE_USER" env HOME="$APP_DIR" pnpm install --frozen-lockfile --ignore-scripts )
 
 echo "==> reiniciando servicio"
 systemctl restart jodete

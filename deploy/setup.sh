@@ -35,7 +35,10 @@ fi
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
 echo "==> [4/6] Instalando dependencias (como '$SERVICE_USER')"
-( cd "$APP_DIR" && sudo -u "$SERVICE_USER" env HOME="$APP_DIR" pnpm install --frozen-lockfile )
+# --ignore-scripts: pnpm 10+ frena en build-scripts no aprobados (esbuild, msgpackr-extract)
+# y sale con código != 0. No los necesitamos: tsx resuelve el binario de esbuild por el
+# paquete de plataforma y msgpackr usa fallback JS. Así el install es determinístico.
+( cd "$APP_DIR" && sudo -u "$SERVICE_USER" env HOME="$APP_DIR" pnpm install --frozen-lockfile --ignore-scripts )
 
 echo "==> [5/6] Instalando y habilitando el servicio systemd"
 install -m0644 "$APP_DIR/deploy/jodete.service" /etc/systemd/system/jodete.service
