@@ -33,7 +33,8 @@ ProtectHostname=true
 RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# AF_NETLINK es necesario para networkInterfaces()/getifaddrs y resolución de red en Node.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 # Node/tsx usan JIT (memoria ejecutable), por eso MemoryDenyWriteExecute queda en false.

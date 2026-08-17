@@ -43,7 +43,8 @@ echo "==> [4/6] Instalando dependencias (como '$SERVICE_USER')"
 echo "==> [5/6] Instalando y habilitando el servicio systemd"
 install -m0644 "$APP_DIR/deploy/jodete.service" /etc/systemd/system/jodete.service
 systemctl daemon-reload
-systemctl enable --now jodete
+systemctl enable jodete
+systemctl restart jodete
 
 echo "==> [6/6] Estado del servicio:"
 sleep 1

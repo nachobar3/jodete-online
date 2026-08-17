@@ -14,10 +14,17 @@ gameServer.define("game", GameRoom).filterBy(["code"]);
 
 gameServer.listen(port);
 console.log(`[jodete] server escuchando en el puerto ${port} (todas las interfaces)`);
-for (const [name, addrs] of Object.entries(networkInterfaces())) {
-  for (const a of addrs ?? []) {
-    if (a.family === "IPv4" && !a.internal) {
-      console.log(`[jodete]   LAN: ws://${a.address}:${port}  (${name})`);
+// Print de IPs LAN: solo comodidad para desarrollo. networkInterfaces() usa un socket
+// netlink, que puede fallar bajo sandboxes que restringen familias de address (systemd
+// RestrictAddressFamilies) — nunca debe tumbar el server, así que va en try/catch.
+try {
+  for (const [name, addrs] of Object.entries(networkInterfaces())) {
+    for (const a of addrs ?? []) {
+      if (a.family === "IPv4" && !a.internal) {
+        console.log(`[jodete]   LAN: ws://${a.address}:${port}  (${name})`);
+      }
     }
   }
+} catch {
+  /* sin info de LAN (p.ej. netlink restringido); irrelevante en producción */
 }
