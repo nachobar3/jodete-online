@@ -80,6 +80,11 @@ const PERMANENCIA_MS = Number(process.env.JODETE_PERMANENCIA_MS ?? MIN_PERMANENC
 // Timeout de turno (anti-stall): 0 = APAGADO (default). Se puede prender con env.
 const TURN_TIMEOUT = Number(process.env.JODETE_TURN_TIMEOUT_MS ?? 0);
 
+// Ventana de reconexión: ante un corte de red (no una salida voluntaria) el
+// asiento y la mano del jugador se reservan estos segundos esperando que el
+// cliente vuelva con client.reconnect(). Configurable para tests.
+const RECONNECT_WINDOW_SEC = Number(process.env.JODETE_RECONNECT_SEC ?? 60);
+
 // Bots: demora antes de actuar y probabilidad de jugar mal.
 const BOT_DELAY_MS = Number(process.env.JODETE_BOT_DELAY_MS ?? 3000);
 const BOT_MISTAKE = Number(process.env.JODETE_BOT_MISTAKE ?? 0.02);
@@ -244,7 +249,7 @@ export class GameRoom extends Room<GameState> {
     console.log(`[jodete] join ${p.name} en sala ${this.state.code}`);
   }
 
-  onLeave(client: Client) {
+  async onLeave(client: Client, consented?: boolean) {
     const id = client.sessionId;
     if (this.state.phase === "lobby") {
       this.state.players.delete(id);
@@ -258,14 +263,35 @@ export class GameRoom extends Room<GameState> {
       }
       return;
     }
+    // En partida: NO eliminamos al jugador. Lo marcamos desconectado (su asiento
+    // y su mano quedan reservados) y, si le tocaba, pasamos el turno.
     const p = this.state.players.get(id);
     if (p) p.connected = false;
     if (this.g) {
       this.g.connected[id] = false;
-      if (this.g.currentPlayerId === id) {
-        this.stepTurn(1);
-        this.syncPublic();
-      }
+      if (this.g.currentPlayerId === id) this.stepTurn(1);
+      this.syncPublic();
+    }
+
+    // Salida voluntaria (botón "Salir"): no reservamos el asiento, se va y listo.
+    if (consented) return;
+
+    // Corte de red: esperamos a que el cliente vuelva con client.reconnect()
+    // dentro de la ventana. allowReconnection() no pasa por el matchmaking, así
+    // que reengancha aunque la sala esté trabada (lock() en partida).
+    try {
+      await this.allowReconnection(client, RECONNECT_WINDOW_SEC);
+      // Volvió a tiempo: reactivamos su asiento y le reenviamos su mano privada.
+      const back = this.state.players.get(id);
+      if (back) back.connected = true;
+      if (this.g) this.g.connected[id] = true;
+      this.syncPublic();
+      this.sendHand(id);
+      console.log(`[jodete] reconnect ${this.nameOf(id)} en sala ${this.state.code}`);
+    } catch {
+      // No volvió a tiempo: recién ahora lo damos por ido de verdad. Queda como
+      // desconectado (su asiento se mantiene para no romper el turnOrder).
+      console.log(`[jodete] ${this.nameOf(id)} no reconectó a tiempo en ${this.state.code}`);
     }
   }
 

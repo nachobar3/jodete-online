@@ -245,7 +245,12 @@ export function App() {
   const [rejectShake, setRejectShake] = useState(0); // feedback: shake+flash rojo en la mano al rechazar
   const rejectTimer = useRef<number | undefined>(undefined);
   const [connecting, setConnecting] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false); // overlay "Reconectando…"
   const roomRef = useRef<Room | null>(null);
+  const reconnectTokenRef = useRef(""); // room.reconnectionToken para volver tras un corte
+  const intentionalLeaveRef = useRef(false); // true = el usuario tocó "Salir" (no reconectar)
+  const phaseRef = useRef(""); // última fase conocida (para no reconectar si estábamos en lobby)
+  const attemptReconnectRef = useRef<() => void>(() => {});
   const toastId = useRef(0);
   const flightId = useRef(0);
   const pileRef = useRef<HTMLDivElement | null>(null);
@@ -309,15 +314,28 @@ export function App() {
     }
   }, [markJodido]);
 
+  // Vuelta seca al inicio: limpia todo el estado de sala (salida real o
+  // reconexión agotada). Es lo que antes hacía onLeave directamente.
+  const hardLeave = useCallback(() => {
+    roomRef.current = null;
+    reconnectTokenRef.current = "";
+    intentionalLeaveRef.current = false;
+    setReconnecting(false);
+    setView(null); setHand([]); setSessionId("");
+  }, []);
+
   const wireRoom = useCallback((room: Room) => {
     roomRef.current = room;
+    reconnectTokenRef.current = room.reconnectionToken; // token para reconectar tras un corte
     setSessionId(room.sessionId);
+    setReconnecting(false); // si veníamos de un overlay de reconexión, se cierra
     if (new URLSearchParams(window.location.search).has("e2e")) {
       (window as unknown as { __room: Room }).__room = room;
     }
     room.onStateChange(() => {
       const v = snapshot(room);
       playersRef.current = v.players;
+      phaseRef.current = v.phase;
       // Reset del cooldown de JODETE al comenzar una mano nueva (no en cada robo).
       if (prevPhaseRef.current !== "playing" && v.phase === "playing") setJodeteLocked(false);
       prevPhaseRef.current = v.phase;
@@ -355,9 +373,43 @@ export function App() {
       if (victim) markJodido(victim);
     });
     room.onError((code, message) => flash(`Error ${code}: ${message ?? ""}`));
-    room.onLeave(() => { roomRef.current = null; setView(null); setHand([]); setSessionId(""); });
+    room.onLeave((code: number) => {
+      // Corte de red en partida (no fue el botón "Salir" ni un cierre normal, y no
+      // estábamos en el lobby donde el server sí nos saca): mantenemos al jugador
+      // en la mesa y reintentamos reconectar en vez de patearlo al inicio.
+      const wasInGame = phaseRef.current === "playing" || phaseRef.current === "handEnd";
+      if (!intentionalLeaveRef.current && code !== 1000 && wasInGame) {
+        attemptReconnectRef.current();
+        return;
+      }
+      hardLeave();
+    });
     if (room.state) setView(snapshot(room));
-  }, [flash, pushToast, markJodido, triggerJoker]);
+  }, [flash, pushToast, markJodido, triggerJoker, hardLeave]);
+
+  // Reintenta reconectar con el token guardado mientras dure la ventana del
+  // server (~60s), mostrando el overlay "Reconectando…". Solo cae al inicio si
+  // se agota la ventana o falla de verdad. client.reconnect() reengancha directo
+  // a la sesión existente (no pasa por el matchmaking, así que la sala trabada
+  // durante la partida no lo bloquea).
+  const attemptReconnect = useCallback(async () => {
+    const token = reconnectTokenRef.current;
+    if (!token) { hardLeave(); return; }
+    setReconnecting(true);
+    const deadline = performance.now() + 60000;
+    while (performance.now() < deadline) {
+      if (intentionalLeaveRef.current) { hardLeave(); return; }
+      try {
+        const room = await new Client(SERVER_URL).reconnect(token);
+        wireRoom(room); // re-cablea handlers y refresca el token; cierra el overlay
+        return;
+      } catch {
+        await new Promise((r) => setTimeout(r, 1500)); // backoff antes del próximo intento
+      }
+    }
+    hardLeave(); // se agotó la ventana: recién ahora volvemos al inicio
+  }, [wireRoom, hardLeave]);
+  attemptReconnectRef.current = attemptReconnect;
 
   const doCreate = useCallback(async () => {
     if (!name.trim()) return setError("Poné un nombre.");
@@ -512,7 +564,7 @@ export function App() {
     if (suitPickFor) send(ClientMsg.PlayCards, { cardIds: [suitPickFor], declaredSuit: s, observedVersion: 0 });
     setSuitPickFor(null);
   };
-  const leave = () => roomRef.current?.leave();
+  const leave = () => { intentionalLeaveRef.current = true; roomRef.current?.leave(); };
 
   // ---- Menú ---------------------------------------------------------------
   if (!view) {
@@ -606,6 +658,7 @@ export function App() {
           <div style={{ height: 10 }} />
           <button className="secondary" onClick={leave}>Salir</button>
         </div>
+        {reconnecting ? <ReconnectOverlay onGiveUp={() => { intentionalLeaveRef.current = true; hardLeave(); }} /> : null}
       </div>
     );
   }
@@ -723,6 +776,24 @@ export function App() {
       </div>
 
       {showRules ? <RulesModal onClose={() => setShowRules(false)} /> : null}
+
+      {reconnecting ? <ReconnectOverlay onGiveUp={() => { intentionalLeaveRef.current = true; hardLeave(); }} /> : null}
+    </div>
+  );
+}
+
+// Overlay mientras se intenta reconectar tras un corte de red: la partida sigue
+// visible detrás y el jugador NO es pateado al inicio (su asiento se reserva en
+// el server). Solo cae al inicio si toca "Salir" o se agota la ventana.
+function ReconnectOverlay({ onGiveUp }: { onGiveUp: () => void }) {
+  return (
+    <div className="reconnect-overlay" data-testid="reconnecting">
+      <div className="reconnect-box">
+        <div className="reconnect-spinner" />
+        <p className="reconnect-title">Reconectando…</p>
+        <p className="reconnect-sub">Perdimos la conexión. Te mantenemos en la mesa.</p>
+        <button className="link" onClick={onGiveUp}>Salir al inicio</button>
+      </div>
     </div>
   );
 }

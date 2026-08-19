@@ -12,3 +12,4 @@ playwright-report/
 # design-loop: artefactos generados (media pesada + db, se regeneran)
 design-loop/iterations/
 design-loop/*.db
+.env*
