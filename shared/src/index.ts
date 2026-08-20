@@ -131,6 +131,9 @@ export interface PlayContext {
   topRank: Rank | typeof JOKER;
   activeSuit: Suit | null; // palo en vigor (puede diferir del palo del tope tras 8/comodín)
   pendingKind: null | "two" | "wild";
+  /** Tras un 8/comodín que aún no eligió palo: el palo está "abierto" y CUALQUIER
+   *  carta es legal (el siguiente puede tirar el palo que quiera). */
+  suitOpen?: boolean;
 }
 
 /** Legalidad completa (M3+): número, palo en vigor, 8/comodín wild, pending. */
@@ -139,6 +142,7 @@ export function isLegalPlay(card: Card, ctx: PlayContext): boolean {
   if (ctx.pendingKind === "wild") return false; // primero hay que robar 4
   if (isJoker(card)) return true; // comodín se tira sobre cualquiera
   if (card.rank === "8") return true; // 8 se tira sobre cualquiera
+  if (ctx.suitOpen) return true; // palo abierto (8/comodín sin elegir): cualquier carta vale
   if (card.rank === ctx.topRank) return true; // mismo número
   if (ctx.activeSuit != null && card.suit === ctx.activeSuit) return true; // mismo palo en vigor
   return false;
@@ -167,6 +171,7 @@ export const ClientMsg = {
   Ready: "ready",
   Start: "start",
   PlayCards: "playCards",
+  DeclareSuit: "declareSuit",
   PlayEspejito: "playEspejito",
   PlayAsPic: "playAsPic",
   DrawCard: "drawCard",
@@ -177,6 +182,7 @@ export const ClientMsg = {
   PlayAgain: "playAgain",
   AddBot: "addBot",
   RemoveBot: "removeBot",
+  SetBots: "setBots",
 } as const;
 
 export const ServerMsg = {
@@ -228,6 +234,12 @@ export interface PlayCardsPayload {
   cardIds: string[];
   observedVersion: number;
   declaredSuit?: Suit;
+}
+
+/** Elección de palo diferida tras jugar un 8/comodín (el modal aparece DESPUÉS
+ *  de que la carta ya fue jugada; mientras tanto el palo queda abierto). */
+export interface DeclareSuitPayload {
+  suit: Suit;
 }
 
 export interface PlayEspejitoPayload {

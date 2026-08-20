@@ -250,8 +250,8 @@ test("bot: se agrega a la mesa y juega solo en su turno", async ({ browser }) =>
   await hp.getByTestId("create-btn").click();
   await hp.getByTestId("room-code").waitFor();
 
-  await hp.getByTestId("addbot-btn").click();
-  await expect(hp.locator(".badge.bot")).toHaveCount(1); // el bot aparece en la lista
+  await hp.getByTestId("bot-plus").click();
+  await expect(hp.getByTestId("bot-count")).toHaveText("1"); // el counter refleja 1 bot
   await hp.getByTestId("ready-btn").click();
   await hp.getByTestId("start-btn").click();
   await expect(hp.getByTestId("hand").locator(".card")).toHaveCount(7);
@@ -290,10 +290,13 @@ test("bots: cada uno con nombre distinto", async ({ browser }) => {
   await hp.getByTestId("name-input").fill("Humano");
   await hp.getByTestId("create-btn").click();
   await hp.getByTestId("room-code").waitFor();
-  await hp.getByTestId("addbot-btn").click();
-  await hp.getByTestId("addbot-btn").click();
-  await hp.getByTestId("addbot-btn").click();
-  await expect(hp.locator(".badge.bot")).toHaveCount(3);
+  await hp.getByTestId("bot-plus").click();
+  await hp.getByTestId("bot-plus").click();
+  await hp.getByTestId("bot-plus").click();
+  await expect(hp.getByTestId("bot-count")).toHaveText("3");
+  // El badge de la fila colapsada refleja el estado real del server: esperamos a
+  // que los 3 bots estén efectivamente en la mesa antes de leer sus nombres.
+  await expect(hp.locator(".badge.bot")).toHaveText("3");
   const names: string[] = await hp.evaluate(() => {
     const ns: string[] = [];
     (window as any).__room.state.players.forEach((p: any) => { if (p.isBot) ns.push(p.name); });
@@ -326,6 +329,83 @@ test("challenge (JODETE): jugada ilegal queda en pie y se revierte", async ({ br
   await gp.getByTestId("jodete-btn").click();
   await expect(hp.getByTestId("pile").getByTestId("card-T5")).toBeVisible();
   await expect(hp.getByTestId("hand").locator(".card")).toHaveCount(5);
+  await hostCtx.close();
+  await guestCtx.close();
+});
+
+test("8 diferido: la carta se juega YA y el modal de palo aparece después", async ({ browser }) => {
+  const { hp, gp, H, G, hostCtx, guestCtx } = await setupGame(browser);
+  await devSetup(hp, {
+    top: { id: "T5", suit: "C", rank: "5" },
+    currentPlayerId: H,
+    hands: {
+      [H]: [{ id: "h8", suit: "H", rank: "8" }, { id: "hx", suit: "S", rank: "9" }],
+      [G]: [{ id: "gz", suit: "D", rank: "4" }],
+    },
+    deck: filler,
+  });
+  await expect(hp.getByTestId("pile").getByTestId("card-T5")).toBeVisible();
+  // Host juega el 8♥: la carta baja al pozo AL INSTANTE (antes de elegir palo) y
+  // el Guest ya la ve; recién entonces aparece el modal de palo para el Host.
+  await hp.getByTestId("card-h8").dblclick();
+  await expect(hp.getByTestId("pile").getByTestId("card-h8")).toBeVisible();
+  await expect(gp.getByTestId("pile").getByTestId("card-h8")).toBeVisible();
+  // Palo abierto para todos + modal para el Host.
+  await expect(gp.getByTestId("suit-open")).toBeVisible();
+  await expect(hp.getByTestId("suit-H")).toBeVisible();
+  // El Host elige corazones -> palo en vigor y modal cerrado.
+  await hp.getByTestId("suit-H").click();
+  await expect(hp.getByTestId("active-suit")).toBeVisible();
+  await expect(gp.getByTestId("suit-open")).toHaveCount(0);
+  await hostCtx.close();
+  await guestCtx.close();
+});
+
+test("8 diferido: el siguiente tira cualquier palo con el palo abierto y gana la carrera", async ({ browser }) => {
+  const { hp, gp, H, G, hostCtx, guestCtx } = await setupGame(browser);
+  await devSetup(hp, {
+    top: { id: "T5", suit: "C", rank: "5" },
+    currentPlayerId: H,
+    hands: {
+      [H]: [{ id: "h8", suit: "H", rank: "8" }, { id: "hx", suit: "S", rank: "9" }],
+      // Guest tiene un 7♦: sin palo abierto sería ilegal sobre un 8♥, pero con
+      // el palo abierto vale.
+      [G]: [{ id: "g7d", suit: "D", rank: "7" }],
+    },
+    deck: filler,
+  });
+  await expect(hp.getByTestId("pile").getByTestId("card-T5")).toBeVisible();
+  await hp.getByTestId("card-h8").dblclick();
+  await expect(gp.getByTestId("suit-open")).toBeVisible();
+  // Ahora es turno del Guest (el 8 saltea el turno hacia él). Tira su 7♦: válido
+  // por el palo abierto. Gana la carrera y define el palo.
+  await gp.waitForTimeout(1100); // pasar la ventana de permanencia (900ms en tests)
+  await dragToPile(gp, "card-g7d");
+  await expect(gp.getByTestId("pile").getByTestId("card-g7d")).toBeVisible();
+  await expect(hp.getByTestId("pile").getByTestId("card-g7d")).toBeVisible();
+  // El palo dejó de estar abierto y el modal del Host desapareció (perdió la elección).
+  await expect(hp.getByTestId("suit-open")).toHaveCount(0);
+  await expect(hp.getByTestId("suit-h")).toHaveCount(0);
+  await hostCtx.close();
+  await guestCtx.close();
+});
+
+test("robar: clic en el mazo roba una carta", async ({ browser }) => {
+  const { hp, gp, H, G, hostCtx, guestCtx } = await setupGame(browser);
+  await devSetup(hp, {
+    top: { id: "T5", suit: "C", rank: "5" },
+    currentPlayerId: H,
+    hands: {
+      [H]: [{ id: "hx", suit: "S", rank: "9" }],
+      [G]: [{ id: "gz", suit: "D", rank: "4" }],
+    },
+    deck: filler,
+  });
+  await expect(hp.getByTestId("pile").getByTestId("card-T5")).toBeVisible();
+  await expect(hp.getByTestId("hand").locator(".card")).toHaveCount(1);
+  // Clic en el mazo -> roba 1 (sin usar el botón Robar).
+  await hp.getByTestId("deck").click();
+  await expect(hp.getByTestId("hand").locator(".card")).toHaveCount(2);
   await hostCtx.close();
   await guestCtx.close();
 });

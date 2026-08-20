@@ -22,6 +22,7 @@ interface GameView {
   code: string; phase: string; hostId: string; currentPlayerId: string;
   direction: number; deckCount: number; pendingDraw: number; pendingKind: string;
   drawnThisTurn: boolean; activeSuit: Suit | null; top: Card | null;
+  suitOpen: boolean; suitPendingBy: string;
   players: PlayerView[]; scores: Record<string, number>;
 }
 
@@ -51,6 +52,7 @@ function snapshot(room: Room): GameView {
     deckCount: st?.deckCount ?? 0, pendingDraw: st?.pendingDraw ?? 0,
     pendingKind: st?.pendingKind ?? "", drawnThisTurn: st?.drawnThisTurn ?? false,
     activeSuit: normSuit(st?.activeSuit ?? ""),
+    suitOpen: st?.suitOpen ?? false, suitPendingBy: st?.suitPendingBy ?? "",
     top, players, scores,
   };
 }
@@ -175,10 +177,14 @@ function seatPos(rel: number, n: number): CSSProperties {
   const angle = (90 + rel * (360 / n)) * (Math.PI / 180);
   return { left: `${50 + 42 * Math.cos(angle)}%`, top: `${50 + 42 * Math.sin(angle)}%` };
 }
+// Etiqueta corta de una carta para la bitácora (ej. "7♥", "comodín ★").
+function cardLabel(card: Card): string {
+  return card.rank === "JOKER" ? "comodín ★" : `${card.rank}${suitSymbol(card.suit)}`;
+}
 // Layout de la mano: 1 o 2 filas según cuántas cartas entren, con solapamiento
 // dependiente del ancho de pantalla, escala y "peek" (hundido) por viewport.
 interface HandSlot { x: number; y: number; r: number; z: number }
-interface HandLayout { cards: HandSlot[]; scale: number; height: number; isMobile: boolean }
+interface HandLayout { cards: HandSlot[]; scale: number; height: number; isMobile: boolean; width: number }
 function computeHandLayout(n: number, vw: number): HandLayout {
   const isMobile = vw < 820;
   const scale = isMobile ? 1.0 : 1.25;
@@ -195,9 +201,11 @@ function computeHandLayout(n: number, vw: number): HandLayout {
   const rowCount = rowSizes.length;
 
   const cards: HandSlot[] = [];
+  let fanW = cardW; // ancho real que ocupa el abanico (para el glow, no tapar toda la pantalla)
   rowSizes.forEach((rowN, ri) => {
     const step = rowN > 1 ? Math.min(maxStep, (avail - cardW) / (rowN - 1)) : 0;
     const rowW = (rowN - 1) * step;
+    fanW = Math.max(fanW, rowW + cardW);
     // Ángulo del abanico: crece con la cantidad de cartas hasta un tope.
     const half = Math.min(isMobile ? 11 : 17, (rowN - 1) * 3.5);
     for (let i = 0; i < rowN; i++) {
@@ -213,7 +221,7 @@ function computeHandLayout(n: number, vw: number): HandLayout {
   });
   // Altura justa para contener las cartas (incluye el arco), así no tapan la mesa.
   const height = 16 + (rowCount > 1 ? rowGap : 0) + cardH + cardH * 0.18;
-  return { cards, scale, height, isMobile };
+  return { cards, scale, height, isMobile, width: fanW };
 }
 
 export function App() {
@@ -225,9 +233,16 @@ export function App() {
   // van en el orden en que fueron repartidas; el jugador las reordena arrastrando.
   const [handOrder, setHandOrder] = useState<string[]>([]);
   const [handEnd, setHandEnd] = useState<HandEndPayload | null>(null);
-  const [suitPickFor, setSuitPickFor] = useState<string | null>(null);
+  // El modal de palo lo dispara el server (suitPendingBy === yo). Este flag solo
+  // permite ocultarlo localmente (clic afuera) sin cancelar la obligación.
+  const [suitModalHidden, setSuitModalHidden] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [toasts, setToasts] = useState<{ id: number; text: string; kind: string }[]>([]);
+  // Bitácora: log persistente de jugadas y eventos (arriba a la izquierda, scrolleable).
+  const [logEntries, setLogEntries] = useState<{ id: number; text: string; kind: string }[]>([]);
+  const logSeq = useRef(0);
+  const logScrollRef = useRef<HTMLDivElement | null>(null);
+  const logStickRef = useRef(true); // ¿el usuario está pegado al fondo? (si no, no auto-scrolleamos)
   const [flights, setFlights] = useState<{ key: number; card: Card; playerId: string; joker: boolean }[]>([]);
   const [dragState, setDragState] = useState<{ cardId: string; x: number; y: number; moved: boolean } | null>(null);
   const dragRef = useRef<{ cardId: string; sx: number; sy: number; x: number; y: number; moved: boolean } | null>(null);
@@ -245,6 +260,15 @@ export function App() {
   const [rejectShake, setRejectShake] = useState(0); // feedback: shake+flash rojo en la mano al rechazar
   const rejectTimer = useRef<number | undefined>(undefined);
   const [connecting, setConnecting] = useState(false);
+  // Counter de bots (host, en lobby): mantiene un valor optimista para no perder
+  // clicks rápidos mientras el server sincroniza el estado real de la sala.
+  const [botTarget, setBotTarget] = useState(0);
+  const botPendingRef = useRef(false);
+  const serverBotCount = view ? view.players.filter((p) => p.isBot).length : 0;
+  useEffect(() => {
+    if (!botPendingRef.current) setBotTarget(serverBotCount);
+    else if (serverBotCount === botTarget) botPendingRef.current = false;
+  }, [serverBotCount, botTarget]);
   const [reconnecting, setReconnecting] = useState(false); // overlay "Reconectando…"
   const roomRef = useRef<Room | null>(null);
   const reconnectTokenRef = useRef(""); // room.reconnectionToken para volver tras un corte
@@ -302,17 +326,25 @@ export function App() {
   // Espejo de la lista de jugadores para resolver nombre→id desde handlers de mensajes.
   const playersRef = useRef<PlayerView[]>([]);
 
+  // Agrega una línea a la bitácora (log persistente, sin auto-borrado).
+  const pushLog = useCallback((text: string, kind = "info") => {
+    setLogEntries((prev) => [...prev.slice(-199), { id: ++logSeq.current, text, kind }]);
+  }, []);
+
   const pushToast = useCallback((t: ToastPayload) => {
     const id = ++toastId.current;
     setToasts((prev) => [...prev.slice(-4), { id, text: t.text, kind: t.kind ?? "info" }]);
     window.setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 3500);
+    // El espejito ya se registra en la bitácora vía CardPlayed; el resto de eventos
+    // (jodetes, penalizaciones, efectos, UNA) se suman acá para el historial.
+    if (t.kind !== "espejito") pushLog(t.text, t.kind ?? "info");
     // G13: los toasts de penalización (UNA/mal cierre/timeout) empiezan con el
     // nombre del penalizado; lo circundamos con glow ROJO además del JodeteResult.
     if (t.kind === "penalty") {
       const hit = playersRef.current.find((p) => p.name && t.text.startsWith(p.name));
       if (hit) markJodido(hit.id);
     }
-  }, [markJodido]);
+  }, [markJodido, pushLog]);
 
   // Vuelta seca al inicio: limpia todo el estado de sala (salida real o
   // reconexión agotada). Es lo que antes hacía onLeave directamente.
@@ -322,6 +354,7 @@ export function App() {
     intentionalLeaveRef.current = false;
     setReconnecting(false);
     setView(null); setHand([]); setSessionId("");
+    setLogEntries([]); logSeq.current = 0; // la bitácora arranca limpia en la próxima sala
   }, []);
 
   const wireRoom = useCallback((room: Room) => {
@@ -337,7 +370,10 @@ export function App() {
       playersRef.current = v.players;
       phaseRef.current = v.phase;
       // Reset del cooldown de JODETE al comenzar una mano nueva (no en cada robo).
-      if (prevPhaseRef.current !== "playing" && v.phase === "playing") setJodeteLocked(false);
+      if (prevPhaseRef.current !== "playing" && v.phase === "playing") {
+        setJodeteLocked(false);
+        if (logSeq.current > 0) pushLog("— nueva mano —", "sep"); // separador en la bitácora
+      }
       prevPhaseRef.current = v.phase;
       setView(v);
     });
@@ -352,6 +388,9 @@ export function App() {
       lastPlayerTimer.current = window.setTimeout(() => setLastPlayer(""), 2000);
       // Una jugada real reactiva el botón JODETE (no se puede spamear robando de a 3).
       setJodeteLocked(false);
+      // Bitácora: registra la jugada (nombre + carta) en cuanto llega al cliente.
+      const who = playersRef.current.find((pl) => pl.id === p.playerId)?.name ?? "Alguien";
+      pushLog(`${who} ${p.espejito ? "espejito" : "jugó"} ${cardLabel(p.card)}`, p.espejito ? "espejito" : "play");
       const isJoker = p.card.rank === "JOKER";
       // G1: SIEMPRE se anima la carta viajando hacia la mesa (también el espejito).
       // La propia SOLO se saltea si la jugaste arrastrando (ya la moviste vos).
@@ -385,7 +424,7 @@ export function App() {
       hardLeave();
     });
     if (room.state) setView(snapshot(room));
-  }, [flash, pushToast, markJodido, triggerJoker, hardLeave]);
+  }, [flash, pushToast, markJodido, triggerJoker, hardLeave, pushLog]);
 
   // Reintenta reconectar con el token guardado mientras dure la ventana del
   // server (~60s), mostrando el overlay "Reconectando…". Solo cae al inicio si
@@ -432,6 +471,10 @@ export function App() {
   const me = useMemo(() => view?.players.find((p) => p.id === sessionId) ?? null, [view, sessionId]);
   const isHost = me?.isHost ?? false;
   const isMyTurn = view?.currentPlayerId === sessionId;
+  // ¿Me toca elegir palo? (jugué un 8/comodín y el palo sigue abierto)
+  const mustPickSuit = view?.suitPendingBy === sessionId;
+  // Al aparecer una nueva elección pendiente, mostramos el modal (reset del ocultar).
+  useEffect(() => { if (!mustPickSuit) setSuitModalHidden(false); }, [mustPickSuit]);
 
   // Revelar (glow) de quién es el turno recién tras 10s sin que nadie TIRE una carta.
   // Se cuenta desde el último cambio de tope (no se reinicia por pasar/robar).
@@ -458,6 +501,13 @@ export function App() {
   }, [hand, handOrder]);
 
   const handLayout = useMemo(() => computeHandLayout(orderedHand.length, vw), [orderedHand.length, vw]);
+
+  // Bitácora: al entrar un evento, auto-scroll al fondo salvo que el usuario haya
+  // scrolleado hacia arriba a mirar historia vieja (logStickRef lo recuerda).
+  useEffect(() => {
+    const el = logScrollRef.current;
+    if (el && logStickRef.current) el.scrollTop = el.scrollHeight;
+  }, [logEntries]);
 
   // Desktop: ubica los botones de acción pegados a la derecha de la mesa,
   // alineados a su centro vertical (la mesa se corre según las filas de la mano).
@@ -502,8 +552,13 @@ export function App() {
     if (!c || !view?.top) return;
     // As de pic: cancela el efecto del tope (se puede fuera de turno).
     if (isAcePic(c) && isEffectCard(view.top)) { send(ClientMsg.PlayAsPic, { cardId }); return; }
-    // 8 y comodín piden palo (dentro o fuera de turno: no delatamos de quién es el turno).
-    if (c.rank === "8" || c.rank === "JOKER") { setSuitPickFor(cardId); return; }
+    // 8 y comodín: la carta se juega YA (los rivales la ven). El palo queda
+    // abierto y el modal para elegirlo aparece DESPUÉS (lo dispara el server vía
+    // suitPendingBy). Si el siguiente juega antes, perdés la elección.
+    if (c.rank === "8" || c.rank === "JOKER") {
+      send(ClientMsg.PlayCards, { cardIds: [cardId], observedVersion: 0 });
+      return;
+    }
     // Fuera de turno con carta idéntica al tope → espejito (jugada legítima).
     if (!isMyTurn && isIdentical(c, view.top)) { send(ClientMsg.PlayEspejito, { cardId }); return; }
     // Resto: SIEMPRE se manda al server, incluso fuera de turno. Si no correspondía,
@@ -561,8 +616,8 @@ export function App() {
   }, []);
 
   const pickSuit = (s: Suit) => {
-    if (suitPickFor) send(ClientMsg.PlayCards, { cardIds: [suitPickFor], declaredSuit: s, observedVersion: 0 });
-    setSuitPickFor(null);
+    send(ClientMsg.DeclareSuit, { suit: s });
+    setSuitModalHidden(true);
   };
   const leave = () => { intentionalLeaveRef.current = true; roomRef.current?.leave(); };
 
@@ -592,6 +647,17 @@ export function App() {
   // ---- Lobby --------------------------------------------------------------
   if (view.phase === "lobby") {
     const allReady = view.players.length >= MIN_PLAYERS && view.players.every((p) => p.ready);
+    const botCount = view.players.filter((p) => p.isBot).length;
+    const humanCount = view.players.length - botCount;
+    const maxBots = Math.max(0, MAX_PLAYERS - humanCount);
+    // Valor mostrado: el optimista, clampeado por el cupo actual de la mesa.
+    const botShown = Math.min(botTarget, maxBots);
+    const changeBots = (next: number) => {
+      const target = Math.max(0, Math.min(maxBots, next));
+      botPendingRef.current = true;
+      setBotTarget(target);
+      send(ClientMsg.SetBots, { count: target });
+    };
     return (
       <div className="app">
         <h1>JODETE</h1>
@@ -603,24 +669,35 @@ export function App() {
         <div className="card-panel">
           <label>Jugadores ({view.players.length}/{MAX_PLAYERS})</label>
           <ul className="player-list">
-            {view.players.map((p) => (
+            {view.players.filter((p) => !p.isBot).map((p) => (
               <li key={p.id} className="player-row">
                 <span>
                   {p.name}{p.id === sessionId ? " (vos)" : ""}
                   {p.isHost ? <span className="badge host">HOST</span> : null}
                 </span>
                 <span>
-                  {p.isBot ? <span className="badge bot">BOT</span> : <span className={`badge ${p.ready ? "ready" : "waiting"}`}>{p.ready ? "LISTO" : "esperando"}</span>}
-                  {isHost && p.isBot ? <button className="mini danger" data-testid={`rmbot-${p.id}`} onClick={() => send(ClientMsg.RemoveBot, { botId: p.id })}>×</button> : null}
+                  <span className={`badge ${p.ready ? "ready" : "waiting"}`}>{p.ready ? "LISTO" : "esperando"}</span>
                 </span>
               </li>
             ))}
+            {botCount > 0 ? (
+              <li className="player-row" data-testid="bots-row">
+                <span>🤖 Bots<span className="badge bot">{botCount}</span></span>
+              </li>
+            ) : null}
           </ul>
         </div>
         <div className="card-panel">
           <button data-testid="ready-btn" onClick={() => send(ClientMsg.Ready, !me?.ready)}>{me?.ready ? "Cancelar listo" : "Estoy listo"}</button>
           {isHost ? (<><div style={{ height: 10 }} />
-            <button data-testid="addbot-btn" className="secondary" disabled={view.players.length >= MAX_PLAYERS} onClick={() => send(ClientMsg.AddBot)}>Agregar bot 🤖</button>
+            <div className="bot-counter" data-testid="bot-counter">
+              <span className="bot-counter-label">Bots 🤖</span>
+              <div className="bot-counter-controls">
+                <button data-testid="bot-minus" className="mini" disabled={botShown <= 0} onClick={() => changeBots(botShown - 1)}>−</button>
+                <span data-testid="bot-count" className="bot-counter-value">{botShown}</span>
+                <button data-testid="bot-plus" className="mini" disabled={botShown >= maxBots} onClick={() => changeBots(botShown + 1)}>+</button>
+              </div>
+            </div>
             <div style={{ height: 10 }} />
             <button data-testid="start-btn" className={allReady ? "" : "secondary"} disabled={!allReady} onClick={() => send(ClientMsg.Start)}>
               {allReady ? "Empezar partida" : `Faltan jugadores/listos (mín. ${MIN_PLAYERS})`}
@@ -671,16 +748,37 @@ export function App() {
   return (
     <div className="game">
       <button className="rules-fab" data-testid="rules-btn" title="Reglas y cartas" onClick={() => setShowRules(true)}>?</button>
+      {/* Bitácora: historial de jugadas y eventos, arriba a la izquierda, scrolleable. */}
+      {logEntries.length > 0 ? (
+        <div
+          className="log-panel"
+          data-testid="log-panel"
+          ref={logScrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            logStickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+          }}
+        >
+          {logEntries.map((l) => (
+            <div key={l.id} className={`log-line ${l.kind}`}>{l.text}</div>
+          ))}
+        </div>
+      ) : null}
       <div className="table-area" ref={tableRef}>
         <div className="table-circle">
           {/* Centro: mazo + pozo + estado de la mesa */}
           <div className="center">
-            <div className="deck"><div className="card back" /><div className="deck-count">{view.deckCount}</div></div>
+            <div className={`deck ${isMyTurn ? "clickable" : ""}`} data-testid="deck"
+              onClick={() => { if (isMyTurn) { playDraw(); send(ClientMsg.DrawCard); } }}
+              title={isMyTurn ? "Robar" : undefined}>
+              <div className="card back" /><div className="deck-count">{view.deckCount}</div>
+            </div>
             <div className={`pile ${jokerPlay ? "joker-play" : ""}`} data-testid="pile" ref={pileRef}>
               {view.top ? <CardFace card={view.top} /> : null}
             </div>
             <div className="center-badges">
-              {view.activeSuit ? <span className={`suit-badge ${isRedSuit(view.activeSuit) ? "red" : ""}`} data-testid="active-suit">{suitSymbol(view.activeSuit)}</span> : null}
+              {view.suitOpen ? <span className="suit-badge open" data-testid="suit-open" title="palo abierto: cualquiera puede tirar el palo que quiera">?</span>
+                : view.activeSuit ? <span className={`suit-badge ${isRedSuit(view.activeSuit) ? "red" : ""}`} data-testid="active-suit">{suitSymbol(view.activeSuit)}</span> : null}
               {/* El sentido es info a deducir: solo aparece con el glow (tras 10s). */}
               {revealed ? <span className="dir" title="sentido">{view.direction === 1 ? "↻" : "↺"}</span> : null}
               {view.pendingDraw > 0 ? <span className="pending" data-testid="pending">Roba {view.pendingDraw}</span> : null}
@@ -716,7 +814,7 @@ export function App() {
 
       {/* Mi mano en abanico */}
       <div className={`myhand ${revealed && isMyTurn ? "myturn" : ""} ${rejectShake ? "rejected" : ""} ${lastPlayer === sessionId ? "just-played" : ""} ${jodido === sessionId ? "jodido" : ""} ${me?.handCount === 1 && me?.saidUna ? "una" : ""}`} ref={handRef} data-testid="hand"
-        style={{ ["--hand-scale" as string]: handLayout.scale, height: `${handLayout.height}px` } as CSSProperties}>
+        style={{ ["--hand-scale" as string]: handLayout.scale, ["--hand-w" as string]: `${handLayout.width}px`, height: `${handLayout.height}px` } as CSSProperties}>
         {orderedHand.length === 0 ? <span className="empty">Sin cartas</span> : null}
         {orderedHand.map((c, i) => {
           const L = handLayout.cards[i] ?? { x: 0, y: 0, r: 0, z: i };
@@ -739,13 +837,19 @@ export function App() {
         )}
         <button data-testid="una-btn" className={`secondary ${me?.handCount === 1 && !me?.saidUna ? "urgent-una" : ""}`} onClick={() => send(ClientMsg.SayUna)}>¡UNA!</button>
         <button data-testid="jodete-btn" className="secondary" disabled={jodeteLocked} onClick={() => { setJodeteLocked(true); send(ClientMsg.CallJodete); }}>JODETE</button>
+        {mustPickSuit && suitModalHidden ? (
+          <button data-testid="pick-suit-btn" className="urgent-una" onClick={() => setSuitModalHidden(false)}>Elegí palo</button>
+        ) : null}
         <button className="link" onClick={leave}>Salir</button>
       </div>
 
       <p className="error hud-error" data-testid="error">{error}</p>
 
-      {suitPickFor ? (
-        <div className="modal-bg" onClick={() => setSuitPickFor(null)}>
+      {mustPickSuit && !suitModalHidden ? (
+        // Clic afuera: oculta el modal (la carta ya está jugada; el palo sigue
+        // abierto hasta que elijas o el siguiente tire). Se puede reabrir con el
+        // botón "Elegí palo" del HUD.
+        <div className="modal-bg" onClick={() => setSuitModalHidden(true)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <p>Elegí el palo</p>
             <div className="suit-row">

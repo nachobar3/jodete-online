@@ -19,9 +19,12 @@ import {
   isAcePic,
   isEffectCard,
   Suit,
+  SUITS,
+  suitSymbol,
   type Card,
   type JoinOptions,
   type PlayCardsPayload,
+  type DeclareSuitPayload,
   type AccuseUnaPayload,
   type HandEndPayload,
   type JodeteResultPayload,
@@ -67,6 +70,8 @@ export class GameState extends Schema {
   @type("string") pendingKind = ""; // "" | "two" | "wild"
   @type("boolean") drawnThisTurn = false; // el jugador de turno ya robó
   @type("string") activeSuit = ""; // palo en vigor ("" si el tope es comodín sin elección)
+  @type("boolean") suitOpen = false; // tras un 8/comodín sin elegir: cualquier carta es legal
+  @type("string") suitPendingBy = ""; // jugador que debe elegir el palo (o "")
   @type(CardSchema) top = new CardSchema();
   @type(["string"]) turnOrder = new ArraySchema<string>();
   @type({ map: Player }) players = new MapSchema<Player>();
@@ -101,6 +106,8 @@ interface G {
   aside: Card[]; // cartas fuera de juego (As de pic tirados aparte)
   hands: Record<string, Card[]>;
   activeSuit: Suit | null;
+  suitOpen: boolean; // 8/comodín jugado sin palo elegido: cualquier carta vale
+  suitPendingBy: string; // jugador que debe elegir el palo (o "")
   pendingDraw: number;
   pendingKind: PendingKind;
   connected: Record<string, boolean>;
@@ -173,6 +180,7 @@ export class GameRoom extends Room<GameState> {
       this.startHand();
     });
     this.onMessage(ClientMsg.PlayCards, (c, p: PlayCardsPayload) => this.handlePlay(c, p));
+    this.onMessage(ClientMsg.DeclareSuit, (c, p: DeclareSuitPayload) => this.handleDeclareSuit(c, p));
     this.onMessage(ClientMsg.PlayEspejito, (c, p: { cardId: string }) => this.handleEspejito(c, p));
     this.onMessage(ClientMsg.PlayAsPic, (c, p: { cardId: string }) => this.handleAsPic(c, p));
     this.onMessage(ClientMsg.DrawCard, (c) => this.handleDraw(c));
@@ -197,6 +205,10 @@ export class GameRoom extends Room<GameState> {
         this.state.scores.delete(p.botId);
       }
     });
+    this.onMessage(ClientMsg.SetBots, (client, p: { count: number }) => {
+      if (client.sessionId !== this.state.hostId || this.state.phase !== "lobby") return;
+      this.setBots(p?.count);
+    });
 
     // Hook de test (solo con JODETE_TEST=1): arma escenarios deterministas.
     if (process.env.JODETE_TEST === "1") {
@@ -216,6 +228,8 @@ export class GameRoom extends Room<GameState> {
       aside: [],
       hands: s.hands,
       activeSuit: s.activeSuit ?? s.top.suit,
+      suitOpen: false,
+      suitPendingBy: "",
       pendingDraw: 0,
       pendingKind: "",
       connected: Object.fromEntries(ids.map((i) => [i, true])),
@@ -314,6 +328,8 @@ export class GameRoom extends Room<GameState> {
       aside: [],
       hands,
       activeSuit: first.suit,
+      suitOpen: false,
+      suitPendingBy: "",
       pendingDraw: 0,
       pendingKind: "",
       connected: Object.fromEntries(ids.map((id) => [id, this.state.players.get(id)?.connected ?? true])),
@@ -390,6 +406,7 @@ export class GameRoom extends Room<GameState> {
       topRank: this.topCard().rank,
       activeSuit: this.g.activeSuit,
       pendingKind: this.g.pendingKind || null,
+      suitOpen: this.g.suitOpen,
     });
 
     // Regla de los 2s: una jugada MAL solo se acepta si pasaron >= PERMANENCIA_MS
@@ -438,8 +455,36 @@ export class GameRoom extends Room<GameState> {
       discardTopIndex: this.g.discard.length - 1,
       snapshotBefore,
     });
-    this.applyEffects(cards, declaredSuit);
+    this.applyEffects(id, cards, declaredSuit);
     this.afterPlay(id, wasAtOne);
+  }
+
+  /** Abre el palo tras un 8/comodín sin elección: cualquier carta pasa a ser
+   *  legal hasta que `playerId` elija (DeclareSuit) o alguien tire una carta. */
+  private openSuit(playerId: string) {
+    this.g.activeSuit = null;
+    this.g.suitOpen = true;
+    this.g.suitPendingBy = playerId;
+  }
+
+  /** Elección diferida del palo tras un 8/comodín. Solo la puede hacer quien
+   *  jugó la carta y solo mientras el palo siga abierto (si el siguiente ya
+   *  tiró, perdió la prioridad y esto se ignora). */
+  private handleDeclareSuit(client: Client, payload: DeclareSuitPayload) {
+    if (this.state.phase !== "playing") return;
+    const id = client.sessionId;
+    if (!this.g.suitOpen || this.g.suitPendingBy !== id) return; // ya no te toca
+    const suit = payload?.suit;
+    if (!SUITS.includes(suit)) return this.reject(client, "palo inválido");
+    this.g.activeSuit = suit;
+    this.g.suitOpen = false;
+    this.g.suitPendingBy = "";
+    // La elección cambia QUÉ es legal: reseteamos la ventana de permanencia para
+    // que una jugada del siguiente que ya no corresponde (carrera: eligió el palo
+    // justo antes) se revierta sin penalización, igual que el espejito.
+    this.g.topSetAt = Date.now();
+    this.toast(`${this.nameOf(id)} eligió ${suitSymbol(suit)}`, "effect");
+    this.syncPublic();
   }
 
   // ==========================================================================
@@ -474,6 +519,8 @@ export class GameRoom extends Room<GameState> {
       snapshotBefore,
     });
     this.g.activeSuit = card.suit;
+    this.g.suitOpen = false; // un espejito adelantado también cierra el palo abierto
+    this.g.suitPendingBy = "";
     if (card.rank === "2") {
       this.g.pendingDraw += 2;
       this.g.pendingKind = "two";
@@ -549,15 +596,23 @@ export class GameRoom extends Room<GameState> {
   // ==========================================================================
   // Efectos de cartas (M3)
   // ==========================================================================
-  private applyEffects(cards: Card[], declaredSuit?: Suit) {
+  private applyEffects(playerId: string, cards: Card[], declaredSuit?: Suit) {
     const last = cards[cards.length - 1];
     const n = cards.length;
     this.g.drawnThisTurn = false;
+    // Cualquier carta nueva cierra un palo que hubiera quedado abierto: el que
+    // se adelantó ganó la "carrera" y su carta define el palo (el 8/comodín
+    // vuelve a abrirlo abajo si tampoco eligió palo).
+    this.g.suitOpen = false;
+    this.g.suitPendingBy = "";
 
     if (isJoker(last)) {
       this.g.pendingDraw += 4;
       this.g.pendingKind = "wild";
+      // El comodín no tiene palo: si no se declaró, queda ABIERTO hasta que el
+      // jugador elija (modal) o el siguiente tire una carta.
       if (declaredSuit) this.g.activeSuit = declaredSuit;
+      else this.openSuit(playerId);
       this.stepTurn(1);
       return;
     }
@@ -569,8 +624,11 @@ export class GameRoom extends Room<GameState> {
         this.stepTurn(1);
         break;
       case "8":
-        this.g.activeSuit = declaredSuit ?? last.suit;
+        // Con la carta ya jugada, el modal de palo llega DESPUÉS: si no vino un
+        // palo declarado (humano), el palo queda abierto hasta que se elija.
         this.g.pendingKind = "";
+        if (declaredSuit) this.g.activeSuit = declaredSuit;
+        else this.openSuit(playerId);
         this.stepTurn(1);
         break;
       case "J": // saltea al próximo (por cada J)
@@ -817,6 +875,8 @@ export class GameRoom extends Room<GameState> {
     this.state.pendingKind = g.pendingKind;
     this.state.drawnThisTurn = g.drawnThisTurn;
     this.state.activeSuit = g.activeSuit ?? "";
+    this.state.suitOpen = g.suitOpen;
+    this.state.suitPendingBy = g.suitPendingBy;
     this.armTurnTimer();
     this.scheduleBots();
   }
@@ -842,6 +902,24 @@ export class GameRoom extends Room<GameState> {
     p.connected = true;
     this.state.players.set(id, p);
     this.state.scores.set(id, 0);
+  }
+
+  /** Ajusta la cantidad de bots en la mesa al número pedido (agrega o saca). */
+  private setBots(count: number) {
+    const humans = [...this.state.players.values()].filter((p) => !p.isBot).length;
+    const maxBots = Math.max(0, MAX_PLAYERS - humans);
+    const target = Math.max(0, Math.min(maxBots, Math.floor(Number(count) || 0)));
+    let bots = [...this.state.players.values()].filter((p) => p.isBot);
+    while (bots.length < target) {
+      this.addBot();
+      bots = [...this.state.players.values()].filter((p) => p.isBot);
+    }
+    // Saca los últimos agregados primero (LIFO) para un comportamiento predecible.
+    while (bots.length > target) {
+      const b = bots.pop()!;
+      this.state.players.delete(b.id);
+      this.state.scores.delete(b.id);
+    }
   }
 
   private botDelay(): number {
@@ -897,7 +975,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private botCtx() {
-    return { topRank: this.topCard().rank, activeSuit: this.g.activeSuit, pendingKind: (this.g.pendingKind || null) as null | "two" | "wild" };
+    return { topRank: this.topCard().rank, activeSuit: this.g.activeSuit, pendingKind: (this.g.pendingKind || null) as null | "two" | "wild", suitOpen: this.g.suitOpen };
   }
 
   private botSuitFor(card: Card): Suit | undefined {
