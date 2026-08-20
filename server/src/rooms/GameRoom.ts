@@ -238,6 +238,20 @@ export class GameRoom extends Room<GameState> {
       this.resetToLobby();
     });
 
+    // Red de seguridad ante drift de versiones cliente/servidor. El cliente se
+    // auto-deploya (Vercel) mientras el server self-host se actualiza a mano, así
+    // que el cliente puede ir por delante y mandar un mensaje que este server
+    // todavía no conoce (p.ej. setBots/setCutThreshold/kickPlayer recién
+    // agregados). El default de Colyseus en producción ante un mensaje NO
+    // registrado es echar al cliente de la sala (client.leave(WS_CLOSE_WITH_ERROR)),
+    // lo que hace "colapsar" y desaparecer la sala para el host. En dev solo manda
+    // un error blando, por eso en local no se reproduce. Con un handler "*" el
+    // mensaje desconocido se ignora sin tumbar la sala (a lo sumo la acción no
+    // surte efecto hasta actualizar el server).
+    this.onMessage("*", (_client, type) => {
+      console.warn(`[jodete] mensaje desconocido ignorado: ${String(type)} (sala ${this.state.code})`);
+    });
+
     // Hook de test (solo con JODETE_TEST=1): arma escenarios deterministas.
     if (process.env.JODETE_TEST === "1") {
       this.onMessage("__setup", (_client, s: DevSetup) => this.devSetup(s));
