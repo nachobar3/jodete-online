@@ -9,6 +9,17 @@ export const INITIAL_HAND_SIZE = 7;
 export const DECK_COUNT = 3; // 3 mazos franceses + comodines, mezclados
 export const CODE_LENGTH = 6;
 
+/** Bonus (en negativo) que se resta al puntaje del que corta una mano. */
+export const CUT_BONUS = 10;
+/** Umbral de puntos por default para el knockout (quien lo supera queda afuera). */
+export const DEFAULT_CUT_THRESHOLD = 100;
+/** Límites del umbral configurable por el host en el lobby. */
+export const MIN_CUT_THRESHOLD = 30;
+export const MAX_CUT_THRESHOLD = 500;
+
+/** Código de cierre WebSocket cuando el host patea a un jugador de la sala. */
+export const KICK_CODE = 4000;
+
 /** Permanencia mínima (ms) que una versión de estado debe haber estado visible
  *  para que una jugada normal sea válida y challengeable (regla de los 2s). */
 export const MIN_PERMANENCIA_MS = 2000;
@@ -183,6 +194,9 @@ export const ClientMsg = {
   AddBot: "addBot",
   RemoveBot: "removeBot",
   SetBots: "setBots",
+  KickPlayer: "kickPlayer",
+  SetCutThreshold: "setCutThreshold",
+  NewGame: "newGame",
 } as const;
 
 export const ServerMsg = {
@@ -203,8 +217,13 @@ export interface CardPlayedPayload {
 
 export interface HandEndPayload {
   cutterId: string;
-  /** puntos que sumó cada jugador en esta mano (por lo que quedó en mano) */
+  /** puntos que sumó cada jugador en esta mano (por lo que quedó en mano;
+   *  para el que cortó es negativo: el bonus de corte). */
   roundPoints: Record<string, number>;
+  /** ids de jugadores que superaron el umbral y quedaron afuera en esta mano. */
+  eliminatedIds: string[];
+  /** si el knockout dejó un solo jugador en pie: id del ganador (o "" si sigue). */
+  winnerId: string;
 }
 
 export interface AccuseUnaPayload {

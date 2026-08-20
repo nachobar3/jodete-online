@@ -8,6 +8,11 @@ import {
   PENALTY_DRAW,
   CHALLENGE_MAX_CARDS_ABOVE,
   MIN_PERMANENCIA_MS,
+  CUT_BONUS,
+  DEFAULT_CUT_THRESHOLD,
+  MIN_CUT_THRESHOLD,
+  MAX_CUT_THRESHOLD,
+  KICK_CODE,
   ClientMsg,
   ServerMsg,
   buildDecks,
@@ -57,6 +62,7 @@ export class Player extends Schema {
   @type("boolean") isBot = false;
   @type("boolean") saidUna = false;
   @type("uint8") handCount = 0;
+  @type("boolean") eliminated = false; // superó el umbral de corte (knockout)
 }
 
 export class GameState extends Schema {
@@ -76,6 +82,8 @@ export class GameState extends Schema {
   @type(["string"]) turnOrder = new ArraySchema<string>();
   @type({ map: Player }) players = new MapSchema<Player>();
   @type({ map: "number" }) scores = new MapSchema<number>();
+  @type("uint16") cutThreshold = DEFAULT_CUT_THRESHOLD; // puntos que dejan afuera
+  @type("string") winnerId = ""; // ganador cuando termina el knockout
 }
 
 // Ventana de permanencia: una jugada ILEGAL solo se acepta si pasaron >= este
@@ -161,6 +169,9 @@ export class GameRoom extends Room<GameState> {
   private botSeq = 0;
   private lastTopId = "";
 
+  // Knockout: el que cortó la mano anterior arranca la próxima (prioridad).
+  private lastCutterId = "";
+
   // ==========================================================================
   onCreate(options: Partial<JoinOptions>) {
     this.state = new GameState();
@@ -208,6 +219,23 @@ export class GameRoom extends Room<GameState> {
     this.onMessage(ClientMsg.SetBots, (client, p: { count: number }) => {
       if (client.sessionId !== this.state.hostId || this.state.phase !== "lobby") return;
       this.setBots(p?.count);
+    });
+    // El host puede eliminar (patear) a cualquier jugador de la sala en el lobby.
+    this.onMessage(ClientMsg.KickPlayer, (client, p: { playerId: string }) => {
+      if (client.sessionId !== this.state.hostId || this.state.phase !== "lobby") return;
+      this.kickPlayer(p?.playerId);
+    });
+    // El host define cuántos puntos son el "corte" del knockout (en el lobby).
+    this.onMessage(ClientMsg.SetCutThreshold, (client, p: { value: number }) => {
+      if (client.sessionId !== this.state.hostId || this.state.phase !== "lobby") return;
+      const v = Math.floor(Number(p?.value) || 0);
+      this.state.cutThreshold = Math.max(MIN_CUT_THRESHOLD, Math.min(MAX_CUT_THRESHOLD, v));
+    });
+    // Tras un knockout terminado (gameEnd): el host arranca una partida nueva
+    // reseteando puntajes/eliminados y volviendo al lobby.
+    this.onMessage(ClientMsg.NewGame, (client) => {
+      if (client.sessionId !== this.state.hostId || this.state.phase !== "gameEnd") return;
+      this.resetToLobby();
     });
 
     // Hook de test (solo con JODETE_TEST=1): arma escenarios deterministas.
@@ -313,15 +341,23 @@ export class GameRoom extends Room<GameState> {
   // Mano
   // ==========================================================================
   private startHand() {
-    const ids = [...this.state.players.keys()];
+    // Solo juegan los que siguen en carrera (no eliminados por el knockout).
+    const ids = [...this.state.players.keys()].filter(
+      (id) => !this.state.players.get(id)?.eliminated,
+    );
     const deck = shuffle(buildDecks(DECK_COUNT), Math.random);
     const hands: Record<string, Card[]> = {};
     for (const id of ids) hands[id] = deck.splice(0, INITIAL_HAND_SIZE);
     const first = deck.shift()!;
 
+    // Prioridad: el que cortó la mano anterior arranca (si sigue en carrera).
+    const starter = this.lastCutterId && ids.includes(this.lastCutterId)
+      ? this.lastCutterId
+      : ids[Math.floor(Math.random() * ids.length)];
+
     this.g = {
       turnOrder: ids,
-      currentPlayerId: ids[Math.floor(Math.random() * ids.length)],
+      currentPlayerId: starter,
       direction: 1,
       deck,
       discard: [first],
@@ -360,14 +396,90 @@ export class GameRoom extends Room<GameState> {
       roundPoints[id] = pts;
       this.state.scores.set(id, (this.state.scores.get(id) ?? 0) + pts);
     }
-    this.state.phase = "handEnd";
+    // El que corta recibe el bonus: -CUT_BONUS al puntaje (menos es mejor) y
+    // prioridad para arrancar la mano siguiente.
+    roundPoints[cutterId] = -CUT_BONUS;
+    this.state.scores.set(cutterId, (this.state.scores.get(cutterId) ?? 0) - CUT_BONUS);
+    this.lastCutterId = cutterId;
+
+    // Knockout: quien superó el umbral de corte queda afuera en esta mano.
+    const threshold = this.state.cutThreshold;
+    const eliminatedIds: string[] = [];
+    for (const id of this.g.turnOrder) {
+      const p = this.state.players.get(id);
+      if (p && !p.eliminated && (this.state.scores.get(id) ?? 0) > threshold) {
+        p.eliminated = true;
+        eliminatedIds.push(id);
+      }
+    }
+
+    // ¿Queda un solo jugador en carrera? Fin del knockout (gana el último en pie).
+    const alive = [...this.state.players.values()].filter((p) => !p.eliminated);
+    const winnerId = alive.length <= 1 ? (alive[0]?.id ?? cutterId) : "";
+
     this.state.currentPlayerId = "";
     this.clearTurnTimer();
     this.clearAllBotTimers();
     this.armedCurrent = "";
     this.unlock();
-    const payload: HandEndPayload = { cutterId, roundPoints };
+
+    for (const id of eliminatedIds) {
+      this.toast(`${this.nameOf(id)} superó ${threshold} y quedó afuera`, "penalty");
+    }
+
+    if (winnerId) {
+      this.state.winnerId = winnerId;
+      this.state.phase = "gameEnd";
+      this.lastCutterId = "";
+      this.toast(`🏆 ${this.nameOf(winnerId)} ganó la partida`, "effect");
+    } else {
+      this.state.phase = "handEnd";
+    }
+
+    const payload: HandEndPayload = { cutterId, roundPoints, eliminatedIds, winnerId };
     this.broadcast(ServerMsg.HandEnd, payload);
+  }
+
+  /** Patea a un jugador de la sala (solo lobby, decidido por el host). */
+  private kickPlayer(playerId: string) {
+    if (!playerId || playerId === this.state.hostId) return; // no se puede al host
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    if (p.isBot) {
+      this.state.players.delete(playerId);
+      this.state.scores.delete(playerId);
+      return;
+    }
+    // Humano: lo desconectamos con un código propio; onLeave (en lobby) lo saca
+    // del estado. Si no hay cliente activo, lo removemos directo.
+    const client = this.clients.find((c) => c.sessionId === playerId);
+    if (client) client.leave(KICK_CODE);
+    else {
+      this.state.players.delete(playerId);
+      this.state.scores.delete(playerId);
+    }
+  }
+
+  /** Tras un knockout: resetea puntajes/eliminados y vuelve todos al lobby. */
+  private resetToLobby() {
+    this.clearTurnTimer();
+    this.clearAllBotTimers();
+    this.armedCurrent = "";
+    this.lastCutterId = "";
+    this.lastTopId = "";
+    for (const p of this.state.players.values()) {
+      p.eliminated = false;
+      p.ready = p.isBot; // los bots quedan listos; los humanos re-confirman
+      p.saidUna = false;
+      p.handCount = 0;
+      this.state.scores.set(p.id, 0);
+    }
+    this.state.winnerId = "";
+    this.state.currentPlayerId = "";
+    this.state.turnOrder = new ArraySchema<string>();
+    this.state.top = new CardSchema();
+    this.state.phase = "lobby";
+    this.unlock();
   }
 
   // ==========================================================================

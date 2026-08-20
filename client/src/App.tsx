@@ -6,7 +6,8 @@ import { Client, Room } from "colyseus.js";
 import { primeAudio, playHover, playThrow, playDraw, playGlass } from "./sound";
 import {
   CODE_LENGTH, ClientMsg, ServerMsg, MIN_PLAYERS, MAX_PLAYERS,
-  TURN_REVEAL_MS, isIdentical, isAcePic, isEffectCard, suitSymbol, isRedSuit, SUITS, Suit,
+  TURN_REVEAL_MS, CUT_BONUS, DEFAULT_CUT_THRESHOLD, MIN_CUT_THRESHOLD, MAX_CUT_THRESHOLD, KICK_CODE,
+  isIdentical, isAcePic, isEffectCard, suitSymbol, isRedSuit, SUITS, Suit,
   type Card, type HandEndPayload, type ToastPayload, type CardPlayedPayload, type JodeteResultPayload,
 } from "@jodete/shared";
 
@@ -16,7 +17,7 @@ const SERVER_URL =
 
 interface PlayerView {
   id: string; name: string; ready: boolean; connected: boolean;
-  isHost: boolean; isBot: boolean; saidUna: boolean; handCount: number;
+  isHost: boolean; isBot: boolean; saidUna: boolean; handCount: number; eliminated: boolean;
 }
 interface GameView {
   code: string; phase: string; hostId: string; currentPlayerId: string;
@@ -24,6 +25,7 @@ interface GameView {
   drawnThisTurn: boolean; activeSuit: Suit | null; top: Card | null;
   suitOpen: boolean; suitPendingBy: string;
   players: PlayerView[]; scores: Record<string, number>;
+  cutThreshold: number; winnerId: string;
 }
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -38,7 +40,7 @@ function snapshot(room: Room): GameView {
   const st = room.state;
   const byId = new Map<string, PlayerView>();
   st?.players?.forEach((p: PlayerView) =>
-    byId.set(p.id, { id: p.id, name: p.name, ready: p.ready, connected: p.connected, isHost: p.isHost, isBot: p.isBot, saidUna: p.saidUna, handCount: p.handCount }));
+    byId.set(p.id, { id: p.id, name: p.name, ready: p.ready, connected: p.connected, isHost: p.isHost, isBot: p.isBot, saidUna: p.saidUna, handCount: p.handCount, eliminated: p.eliminated }));
   const order: string[] = st?.turnOrder ? [...st.turnOrder] : [];
   const players = order.length > 0
     ? order.map((id) => byId.get(id)).filter((p): p is PlayerView => !!p)
@@ -54,6 +56,7 @@ function snapshot(room: Room): GameView {
     activeSuit: normSuit(st?.activeSuit ?? ""),
     suitOpen: st?.suitOpen ?? false, suitPendingBy: st?.suitPendingBy ?? "",
     top, players, scores,
+    cutThreshold: st?.cutThreshold ?? 0, winnerId: st?.winnerId ?? "",
   };
 }
 
@@ -269,6 +272,14 @@ export function App() {
     if (!botPendingRef.current) setBotTarget(serverBotCount);
     else if (serverBotCount === botTarget) botPendingRef.current = false;
   }, [serverBotCount, botTarget]);
+  // Umbral de corte (host, en lobby): mismo esquema optimista que el counter de bots.
+  const [cutTarget, setCutTarget] = useState(DEFAULT_CUT_THRESHOLD);
+  const cutPendingRef = useRef(false);
+  const serverCut = view?.cutThreshold || DEFAULT_CUT_THRESHOLD;
+  useEffect(() => {
+    if (!cutPendingRef.current) setCutTarget(serverCut);
+    else if (serverCut === cutTarget) cutPendingRef.current = false;
+  }, [serverCut, cutTarget]);
   const [reconnecting, setReconnecting] = useState(false); // overlay "Reconectando…"
   const roomRef = useRef<Room | null>(null);
   const reconnectTokenRef = useRef(""); // room.reconnectionToken para volver tras un corte
@@ -413,6 +424,12 @@ export function App() {
     });
     room.onError((code, message) => flash(`Error ${code}: ${message ?? ""}`));
     room.onLeave((code: number) => {
+      // El host nos sacó de la sala: volvemos al inicio con un aviso, sin reconectar.
+      if (code === KICK_CODE) {
+        hardLeave();
+        setError("El host te sacó de la sala.");
+        return;
+      }
       // Corte de red en partida (no fue el botón "Salir" ni un cierre normal, y no
       // estábamos en el lobby donde el server sí nos saca): mantenemos al jugador
       // en la mesa y reintentamos reconectar en vez de patearlo al inicio.
@@ -658,6 +675,13 @@ export function App() {
       setBotTarget(target);
       send(ClientMsg.SetBots, { count: target });
     };
+    const cutShown = Math.max(MIN_CUT_THRESHOLD, Math.min(MAX_CUT_THRESHOLD, cutTarget));
+    const changeCut = (next: number) => {
+      const v = Math.max(MIN_CUT_THRESHOLD, Math.min(MAX_CUT_THRESHOLD, next));
+      cutPendingRef.current = true;
+      setCutTarget(v);
+      send(ClientMsg.SetCutThreshold, { value: v });
+    };
     return (
       <div className="app">
         <h1>JODETE</h1>
@@ -665,6 +689,9 @@ export function App() {
         <div className="card-panel">
           <label>Compartí este código</label>
           <div className="code-display" data-testid="room-code">{view.code}</div>
+          <p className="subtitle" data-testid="cut-info" style={{ margin: "8px 0 0" }}>
+            Corte 🏁 <b>{view.cutThreshold}</b> pts · el que supera queda afuera (knockout)
+          </p>
         </div>
         <div className="card-panel">
           <label>Jugadores ({view.players.length}/{MAX_PLAYERS})</label>
@@ -677,6 +704,9 @@ export function App() {
                 </span>
                 <span>
                   <span className={`badge ${p.ready ? "ready" : "waiting"}`}>{p.ready ? "LISTO" : "esperando"}</span>
+                  {isHost && p.id !== sessionId ? (
+                    <button className="mini kick" data-testid={`kick-${p.id}`} title="Sacar de la sala" onClick={() => send(ClientMsg.KickPlayer, { playerId: p.id })}>✕</button>
+                  ) : null}
                 </span>
               </li>
             ))}
@@ -699,6 +729,15 @@ export function App() {
               </div>
             </div>
             <div style={{ height: 10 }} />
+            <div className="bot-counter" data-testid="cut-counter" title="Quien supere estos puntos queda afuera (knockout hasta que quede 1)">
+              <span className="bot-counter-label">Corte 🏁</span>
+              <div className="bot-counter-controls">
+                <button data-testid="cut-minus" className="mini" disabled={cutShown <= MIN_CUT_THRESHOLD} onClick={() => changeCut(cutShown - 10)}>−</button>
+                <span data-testid="cut-value" className="bot-counter-value">{cutShown}</span>
+                <button data-testid="cut-plus" className="mini" disabled={cutShown >= MAX_CUT_THRESHOLD} onClick={() => changeCut(cutShown + 10)}>+</button>
+              </div>
+            </div>
+            <div style={{ height: 10 }} />
             <button data-testid="start-btn" className={allReady ? "" : "secondary"} disabled={!allReady} onClick={() => send(ClientMsg.Start)}>
               {allReady ? "Empezar partida" : `Faltan jugadores/listos (mín. ${MIN_PLAYERS})`}
             </button></>) : null}
@@ -717,20 +756,53 @@ export function App() {
     return (
       <div className="app">
         <h1>JODETE</h1>
-        <p className="subtitle" data-testid="hand-end">{cutterName} cortó 🎉</p>
+        <p className="subtitle" data-testid="hand-end">{cutterName} cortó 🎉 <span className="round-pts">(−{CUT_BONUS})</span></p>
         <div className="card-panel">
-          <label>Puntaje (menos es mejor)</label>
+          <label>Puntaje (menos es mejor) · corte a {view.cutThreshold}</label>
+          <ul className="player-list">
+            {rows.map((p) => {
+              const d = handEnd?.roundPoints[p.id];
+              return (
+              <li key={p.id} className={`player-row${p.eliminated ? " eliminated" : ""}`}>
+                <span>{p.name}{p.id === sessionId ? " (vos)" : ""}{p.eliminated ? <span className="badge waiting">AFUERA</span> : null}</span>
+                <span><b>{view.scores[p.id] ?? 0}</b>{d != null ? <span className="round-pts"> ({d >= 0 ? "+" : "−"}{Math.abs(d)})</span> : null}</span>
+              </li>
+              );
+            })}
+          </ul>
+        </div>
+        <div className="card-panel">
+          {isHost ? <button data-testid="play-again-btn" onClick={() => send(ClientMsg.PlayAgain)}>Jugar otra mano</button>
+            : <p style={{ textAlign: "center", color: "#9fc2b0" }}>Esperando al host…</p>}
+          <div style={{ height: 10 }} />
+          <button className="secondary" onClick={leave}>Salir</button>
+        </div>
+        {reconnecting ? <ReconnectOverlay onGiveUp={() => { intentionalLeaveRef.current = true; hardLeave(); }} /> : null}
+      </div>
+    );
+  }
+
+  // ---- Fin de partida (knockout: quedó 1) ---------------------------------
+  if (view.phase === "gameEnd") {
+    const rows = [...view.players].sort((a, b) => (view.scores[a.id] ?? 0) - (view.scores[b.id] ?? 0));
+    const winnerName = view.players.find((p) => p.id === view.winnerId)?.name ?? "Alguien";
+    return (
+      <div className="app">
+        <h1>JODETE</h1>
+        <p className="subtitle" data-testid="game-end">🏆 {winnerName} ganó la partida</p>
+        <div className="card-panel">
+          <label>Puntaje final · corte a {view.cutThreshold}</label>
           <ul className="player-list">
             {rows.map((p) => (
-              <li key={p.id} className="player-row">
-                <span>{p.name}{p.id === sessionId ? " (vos)" : ""}</span>
-                <span><b>{view.scores[p.id] ?? 0}</b>{handEnd ? <span className="round-pts"> (+{handEnd.roundPoints[p.id] ?? 0})</span> : null}</span>
+              <li key={p.id} className={`player-row${p.eliminated ? " eliminated" : ""}`}>
+                <span>{p.name}{p.id === sessionId ? " (vos)" : ""}{p.id === view.winnerId ? <span className="badge ready">GANADOR</span> : p.eliminated ? <span className="badge waiting">afuera</span> : null}</span>
+                <span><b>{view.scores[p.id] ?? 0}</b></span>
               </li>
             ))}
           </ul>
         </div>
         <div className="card-panel">
-          {isHost ? <button data-testid="play-again-btn" onClick={() => send(ClientMsg.PlayAgain)}>Jugar otra mano</button>
+          {isHost ? <button data-testid="new-game-btn" onClick={() => send(ClientMsg.NewGame)}>Nueva partida</button>
             : <p style={{ textAlign: "center", color: "#9fc2b0" }}>Esperando al host…</p>}
           <div style={{ height: 10 }} />
           <button className="secondary" onClick={leave}>Salir</button>

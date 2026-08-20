@@ -38,6 +38,9 @@ button.warn { background: #d9a441; color: #2a1c04; }
 .badge.bot { background: #6a8caf; color: #06121c; }
 .player-row > span:last-child { display: inline-flex; align-items: center; gap: 6px; }
 button.mini.danger { width: auto; padding: 0 8px; line-height: 20px; background: #b04a4a; color: #fff; font-size: 14px; }
+button.mini.kick { width: auto; min-width: 28px; min-height: 28px; padding: 0 8px; line-height: 1; background: #b04a4a; color: #fff; font-size: 14px; font-weight: 800; }
+.player-row.eliminated { opacity: .55; }
+.player-row.eliminated .badge.waiting { background: #b04a4a; color: #fff; }
 .player-row .badge.bot { margin-left: 8px; }
 .bot-counter { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 8px; background: rgba(0,0,0,.2); }
 .bot-counter-label { font-weight: 700; }
