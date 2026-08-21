@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Bungee&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; font-family: "Baloo 2", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 40px; color: #e8f0ea;
+    background: radial-gradient(ellipse 130% 100% at 50% 0%, #1b3a2b, #0c1a13);
+    background-attachment: fixed;
+  }
+  .wrap { max-width: 460px; margin: 0 auto; }
+  h1 { text-align:center; font-family:"Bungee",sans-serif; font-weight:400; color:#ffd23f;
+       letter-spacing:2px; text-shadow:0 2px 0 #b8842c,0 3px 8px rgba(0,0,0,.5); margin:0 0 4px; font-size:28px; }
+  .sub { text-align:center; color:#8fb3a0; font-size:13px; margin:0 0 26px; }
+  .state-label { font-size:11px; color:#7fa591; text-transform:uppercase; letter-spacing:.5px; margin:20px 0 8px; }
+
+  /* ==== Copia EXACTA de lo aplicado en client/src/styles.css ==== */
+  .hud { display:flex; gap:8px; align-items:center; }
+  .hud > button { flex:1; }
+  .hud button {
+    padding:10px; min-height:48px; font-size:15px; cursor:pointer;
+    font-family:"Baloo 2",sans-serif;
+  }
+  .hud button.chip {
+    border: none; border-radius: 14px; min-height: 52px; color: #fff;
+    font-weight: 800; letter-spacing: .3px; text-shadow: 0 1px 1px rgba(0,0,0,.35);
+    transition: transform .06s, box-shadow .06s;
+  }
+  .hud button.chip.draw {
+    background: linear-gradient(180deg, #3aa0d8, #2076a8);
+    box-shadow: 0 5px 0 #14496b, 0 8px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35);
+  }
+  .hud button.chip.una {
+    background: linear-gradient(180deg, #3fd0ff, #1f9ecf); color: #032530;
+    text-shadow: 0 1px 0 rgba(255,255,255,.4);
+    box-shadow: 0 5px 0 #12708f, 0 8px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.55);
+  }
+  .hud button.chip.jodete {
+    background: linear-gradient(180deg, #f0574a, #c22a1e);
+    box-shadow: 0 5px 0 #7d160d, 0 8px 12px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.3);
+  }
+  .hud button.chip.neutral {
+    background: linear-gradient(180deg, #3fbf7f, #1f8f57); color: #042616;
+    text-shadow: 0 1px 0 rgba(255,255,255,.35);
+    box-shadow: 0 5px 0 #14603c, 0 8px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.4);
+  }
+  .hud button.chip.urgent-draw {
+    background: linear-gradient(135deg, #e0483a, #b02a1f); color: #fff5f0;
+    border: 1px solid #ffb1a6; font-weight: 800; font-size: 16px; letter-spacing: .3px;
+    box-shadow: 0 0 14px 3px rgba(255,255,255,.5), 0 4px 12px rgba(0,0,0,.4);
+  }
+  .hud button.chip.urgent-una {
+    background: linear-gradient(135deg, #3fd0ff, #1f9ecf); color: #032530;
+    border: 1px solid #baf0ff; font-weight: 800;
+    box-shadow: 0 0 14px 3px rgba(255,255,255,.5), 0 4px 12px rgba(0,0,0,.4);
+  }
+  .foot { text-align:center; color:#6f9482; font-size:12px; margin-top:26px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>JODETE</h1>
+  <p class="sub">Opción 1 — Fichas de casino (relieve) · APLICADA</p>
+
+  <div class="state-label">Estado normal (tu turno)</div>
+  <div class="hud">
+    <button class="chip draw">Robar</button>
+    <button class="chip una">¡UNA!</button>
+    <button class="chip jodete">JODETE!</button>
+  </div>
+
+  <div class="state-label">Ya robaste → aparece "Pasar" (verde neutral)</div>
+  <div class="hud">
+    <button class="chip neutral">Pasar</button>
+    <button class="chip una">¡UNA!</button>
+    <button class="chip jodete">JODETE!</button>
+  </div>
+
+  <div class="state-label">Estados urgentes (pulso): "Robar 3" por penalización · ¡UNA! sin cantar</div>
+  <div class="hud">
+    <button class="chip draw urgent-draw">Robar 3</button>
+    <button class="chip una urgent-una">¡UNA!</button>
+    <button class="chip jodete">JODETE!</button>
+  </div>
+
+  <p class="foot">Relieve 3D (canto de ficha) que se hunde al tocar · color-coded · JODETE! con "!"</p>
+</div>
+</body>
+</html>

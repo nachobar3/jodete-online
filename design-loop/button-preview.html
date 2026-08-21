@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Bungee&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; font-family: "Baloo 2", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 40px; color: #e8f0ea;
+    background: radial-gradient(ellipse 130% 100% at 50% 0%, #1b3a2b, #0c1a13);
+    background-attachment: fixed;
+  }
+  .wrap { max-width: 460px; margin: 0 auto; }
+  h1 { text-align:center; font-family:"Bungee",sans-serif; font-weight:400; color:#ffd23f;
+       letter-spacing:2px; text-shadow:0 2px 0 #b8842c,0 3px 8px rgba(0,0,0,.5); margin:0 0 4px; font-size:28px; }
+  .sub { text-align:center; color:#8fb3a0; font-size:13px; margin:0 0 26px; }
+  .opt { background: rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.09);
+         border-radius:16px; padding:18px 18px 22px; margin-bottom:22px; }
+  .opt-head { display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
+  .opt-num { font-family:"Bungee",sans-serif; font-size:18px; color:#ffd23f; }
+  .opt-name { font-weight:800; font-size:16px; }
+  .opt-desc { color:#9fc2b0; font-size:12.5px; line-height:1.45; margin:0 0 16px; }
+  /* HUD felt strip so buttons are judged in-context (as they'd sit under the hand) */
+  .hud { display:flex; gap:8px; align-items:center; }
+  .hud > * { flex:1; }
+  .state-label { font-size:11px; color:#7fa591; text-transform:uppercase; letter-spacing:.5px; margin:14px 0 7px; }
+
+  /* ============================================================= */
+  /* OPCIÓN 1 — Fichas de casino (relieve / táctil)                 */
+  /* Fills sólidos, borde inferior "3D", radius pill, color-coded.  */
+  .b1 { border:none; cursor:pointer; font-family:"Baloo 2",sans-serif; font-weight:800;
+        font-size:15px; letter-spacing:.3px; padding:13px 10px; border-radius:14px; color:#fff;
+        min-height:52px; position:relative; transition:transform .06s, box-shadow .06s;
+        text-shadow:0 1px 1px rgba(0,0,0,.35); }
+  .b1:active { transform:translateY(3px); }
+  .b1.robar { background:linear-gradient(180deg,#3aa0d8,#2076a8); box-shadow:0 5px 0 #14496b, 0 8px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35); }
+  .b1.robar:active { box-shadow:0 2px 0 #14496b, 0 3px 6px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35); }
+  .b1.una  { background:linear-gradient(180deg,#3fd0ff,#1f9ecf); color:#032530; text-shadow:0 1px 0 rgba(255,255,255,.4);
+             box-shadow:0 5px 0 #12708f, 0 8px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.55); }
+  .b1.jodete { background:linear-gradient(180deg,#f0574a,#c22a1e); box-shadow:0 5px 0 #7d160d, 0 8px 12px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.3); }
+
+  /* ============================================================= */
+  /* OPCIÓN 2 — Neón / arcade (vidrio oscuro + borde glow)          */
+  .b2 { cursor:pointer; font-family:"Baloo 2",sans-serif; font-weight:700; font-size:15px;
+        letter-spacing:.4px; padding:13px 10px; border-radius:12px; min-height:52px;
+        background:rgba(10,22,17,.72); backdrop-filter:blur(2px); transition:box-shadow .15s, background .15s; }
+  .b2.robar { color:#8fe3ff; border:1.5px solid #3aa0d8; box-shadow:0 0 10px rgba(58,160,216,.5), inset 0 0 12px rgba(58,160,216,.15); text-shadow:0 0 8px rgba(120,210,255,.7); }
+  .b2.una   { color:#a6ecff; border:1.5px solid #3fd0ff; box-shadow:0 0 12px rgba(63,208,255,.6), inset 0 0 12px rgba(63,208,255,.18); text-shadow:0 0 9px rgba(140,225,255,.85); }
+  .b2.jodete{ color:#ffb3ab; border:1.5px solid #f0574a; box-shadow:0 0 12px rgba(240,87,74,.55), inset 0 0 12px rgba(240,87,74,.18); text-shadow:0 0 9px rgba(255,150,140,.8); }
+
+  /* ============================================================= */
+  /* OPCIÓN 3 — Naipe (cara crema, tinta, como las cartas)          */
+  .b3 { cursor:pointer; font-family:"Baloo 2",sans-serif; font-weight:800; font-size:15px;
+        padding:12px 10px; border-radius:10px; min-height:52px; background:#fdfdf7;
+        border:1px solid #cbcbbf; box-shadow:0 3px 7px rgba(0,0,0,.35), inset 0 1px 0 #fff;
+        display:flex; align-items:center; justify-content:center; gap:7px; transition:transform .08s; }
+  .b3:active { transform:translateY(2px); }
+  .b3 .ink { font-weight:800; }
+  .b3.robar .ink { color:#1f6f4a; }
+  .b3.una   .ink { color:#166a86; }
+  .b3.jodete .ink{ color:#c0392b; }
+  .b3 .pip { font-size:16px; line-height:1; }
+  .b3.jodete { border-color:#e2b4ad; box-shadow:0 3px 7px rgba(0,0,0,.35), inset 0 1px 0 #fff, inset 0 0 0 2px rgba(192,57,43,.12); }
+
+  .foot { text-align:center; color:#6f9482; font-size:12px; margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>JODETE</h1>
+  <p class="sub">Botones de acción — 3 alternativas · elegí 1, 2 ó 3</p>
+
+  <!-- OPCIÓN 1 -->
+  <div class="opt">
+    <div class="opt-head"><span class="opt-num">01</span><span class="opt-name">Fichas de casino · relieve</span></div>
+    <p class="opt-desc">Sólidos, gruesos y con <b>relieve 3D</b> (borde inferior tipo ficha de póker) que se hunde al tocar. Color-coded por semántica: Robar azul, ¡UNA! cyan, JODETE rojo. Tono lúdico, muy "botón físico".</p>
+    <div class="hud">
+      <button class="b1 robar">Robar</button>
+      <button class="b1 una">¡UNA!</button>
+      <button class="b1 jodete">JODETE</button>
+    </div>
+  </div>
+
+  <!-- OPCIÓN 2 -->
+  <div class="opt">
+    <div class="opt-head"><span class="opt-num">02</span><span class="opt-name">Neón · arcade</span></div>
+    <p class="opt-desc">Vidrio oscuro translúcido con <b>borde y texto que brillan</b> (glow de neón). Estética esports/Balatro, más sobrio y digital. Cada acción con su halo de color; al hover el brillo se intensifica.</p>
+    <div class="hud">
+      <button class="b2 robar">Robar</button>
+      <button class="b2 una">¡UNA!</button>
+      <button class="b2 jodete">JODETE</button>
+    </div>
+  </div>
+
+  <!-- OPCIÓN 3 -->
+  <div class="opt">
+    <div class="opt-head"><span class="opt-num">03</span><span class="opt-name">Naipe · carta</span></div>
+    <p class="opt-desc">Botones como <b>cartitas</b>: cara crema (igual que los naipes del juego), tinta de color y sombra suave sobre el fieltro. Máxima coherencia con el tema de cartas; se leen como piezas del mazo.</p>
+    <div class="hud">
+      <button class="b3 robar"><span class="pip">🂠</span><span class="ink">Robar</span></button>
+      <button class="b3 una"><span class="ink">¡UNA!</span></button>
+      <button class="b3 jodete"><span class="ink">JODETE</span></button>
+    </div>
+  </div>
+
+  <p class="foot">Los 3 respetan la paleta actual (fieltro, dorado, cyan, rojo) y la fuente Baloo 2.</p>
+</div>
+</body>
+</html>

@@ -903,14 +903,14 @@ export function App() {
       {/* HUD. Robar y Pasar comparten botón: aparece "Pasar" recién cuando ya robaste. */}
       <div className="hud" style={hudPos ? { left: hudPos.left, top: hudPos.top, right: "auto", transform: "translateY(-50%)" } : undefined}>
         {view.pendingDraw === 0 && isMyTurn && view.drawnThisTurn ? (
-          <button data-testid="pass-btn" className="secondary" onClick={() => send(ClientMsg.Pass)}>Pasar</button>
+          <button data-testid="pass-btn" className="chip neutral" onClick={() => send(ClientMsg.Pass)}>Pasar</button>
         ) : (
-          <button data-testid="draw-btn" className={`secondary ${view.pendingDraw > 0 ? "urgent-draw" : ""}`} onClick={() => { playDraw(); send(ClientMsg.DrawCard); }}>Robar{view.pendingDraw > 0 ? ` ${view.pendingDraw}` : ""}</button>
+          <button data-testid="draw-btn" className={`chip draw ${view.pendingDraw > 0 ? "urgent-draw" : ""}`} onClick={() => { playDraw(); send(ClientMsg.DrawCard); }}>Robar{view.pendingDraw > 0 ? ` ${view.pendingDraw}` : ""}</button>
         )}
-        <button data-testid="una-btn" className={`secondary ${me?.handCount === 1 && !me?.saidUna ? "urgent-una" : ""}`} onClick={() => send(ClientMsg.SayUna)}>¡UNA!</button>
-        <button data-testid="jodete-btn" className="secondary" disabled={jodeteLocked} onClick={() => { setJodeteLocked(true); send(ClientMsg.CallJodete); }}>JODETE</button>
+        <button data-testid="una-btn" className={`chip una ${me?.handCount === 1 && !me?.saidUna ? "urgent-una" : ""}`} onClick={() => send(ClientMsg.SayUna)}>¡UNA!</button>
+        <button data-testid="jodete-btn" className="chip jodete" disabled={jodeteLocked} onClick={() => { setJodeteLocked(true); send(ClientMsg.CallJodete); }}>JODETE!</button>
         {mustPickSuit && suitModalHidden ? (
-          <button data-testid="pick-suit-btn" className="urgent-una" onClick={() => setSuitModalHidden(false)}>Elegí palo</button>
+          <button data-testid="pick-suit-btn" className="chip urgent-una" onClick={() => setSuitModalHidden(false)}>Elegí palo</button>
         ) : null}
         <button className="link" onClick={leave}>Salir</button>
       </div>

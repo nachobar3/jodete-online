@@ -260,17 +260,63 @@ button.mini.kick { width: auto; min-width: 28px; min-height: 28px; padding: 0 8p
 .hud button { flex: 1; padding: 10px; min-height: 48px; font-size: 15px; }
 .hud .link { width: auto; flex: 0 0 auto; background: none; border: none; color: #9fc2b0; text-decoration: underline; cursor: pointer; padding: 10px 8px; min-height: 44px; }
 
+/* ===== Botones de acción "ficha de casino" (Robar · ¡UNA! · JODETE!) =====
+   Relieve 3D: el borde inferior de color (box-shadow sólido) hace de canto de la
+   ficha y el botón se "hunde" 3px al presionar. Color-coded por semántica.
+   Ojo con el orden: estas reglas van ANTES de las urgent-* para que el estado
+   urgente (pulso rojo/cyan) gane por orden de fuente a igual especificidad. */
+.hud button.chip {
+  border: none; border-radius: 14px; min-height: 52px; color: #fff;
+  font-weight: 800; letter-spacing: .3px; text-shadow: 0 1px 1px rgba(0,0,0,.35);
+  transition: transform .06s, box-shadow .06s;
+}
+.hud button.chip:active:not(:disabled) { transform: translateY(3px); }
+.hud button.chip.draw {
+  background: linear-gradient(180deg, #3aa0d8, #2076a8);
+  box-shadow: 0 5px 0 #14496b, 0 8px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.hud button.chip.draw:active:not(:disabled) {
+  box-shadow: 0 2px 0 #14496b, 0 3px 6px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.hud button.chip.una {
+  background: linear-gradient(180deg, #3fd0ff, #1f9ecf); color: #032530;
+  text-shadow: 0 1px 0 rgba(255,255,255,.4);
+  box-shadow: 0 5px 0 #12708f, 0 8px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.55);
+}
+.hud button.chip.una:active:not(:disabled) {
+  box-shadow: 0 2px 0 #12708f, 0 3px 6px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.55);
+}
+.hud button.chip.jodete {
+  background: linear-gradient(180deg, #f0574a, #c22a1e);
+  box-shadow: 0 5px 0 #7d160d, 0 8px 12px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.hud button.chip.jodete:active:not(:disabled) {
+  box-shadow: 0 2px 0 #7d160d, 0 3px 6px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.3);
+}
+/* "Pasar" ocupa el slot de Robar: ficha verde neutral para diferenciarla. */
+.hud button.chip.neutral {
+  background: linear-gradient(180deg, #3fbf7f, #1f8f57); color: #042616;
+  text-shadow: 0 1px 0 rgba(255,255,255,.35);
+  box-shadow: 0 5px 0 #14603c, 0 8px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.4);
+}
+.hud button.chip.neutral:active:not(:disabled) {
+  box-shadow: 0 2px 0 #14603c, 0 3px 6px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.4);
+}
+
 /* Feedback de acción obligatoria: cuando tenés que "Robar N" por comodín/2s el
    botón deja de ser gris y se vuelve rojo pulsante con el número grande, para
    que la penalización sea inconfundible (dimensión feedback, la más floja). */
-.hud button.urgent-draw {
+/* Especificidad: los chips usan `.chip.draw` (3 clases). Estas urgentes suben a
+   `.chip.urgent-*` (misma especificidad) y, al ir después en el archivo, ganan. */
+.hud button.chip.urgent-draw {
   background: linear-gradient(135deg, #e0483a, #b02a1f); color: #fff5f0;
   border: 1px solid #ffb1a6; font-weight: 800; font-size: 16px; letter-spacing: .3px;
   animation: urgentPulse 1.1s ease-in-out infinite;
 }
 /* Affordance de acción urgente: al quedarte con 1 carta sin cantar, ¡UNA! late
-   en cyan (mismo color que el glow de UNA) para leerse como "acción de emergencia". */
-.hud button.urgent-una {
+   en cyan (mismo color que el glow de UNA) para leerse como "acción de emergencia".
+   Aplica también a "Elegí palo" (misma clase urgent-una + chip). */
+.hud button.chip.urgent-una {
   background: linear-gradient(135deg, #3fd0ff, #1f9ecf); color: #032530;
   border: 1px solid #baf0ff; font-weight: 800;
   animation: urgentPulse 1.1s ease-in-out infinite;
