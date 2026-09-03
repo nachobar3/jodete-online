@@ -9,3 +9,9 @@ packages:
 overrides:
   '@colyseus/core': 0.16.24
   '@colyseus/greeting-banner': 2.0.6
+
+# pnpm 10+ no corre build scripts de deps salvo que se aprueben acá; en CI limpio
+# su ausencia es error (ERR_PNPM_IGNORED_BUILDS), no warning.
+onlyBuiltDependencies:
+  - esbuild
+  - msgpackr-extract
