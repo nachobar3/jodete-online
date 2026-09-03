@@ -59,7 +59,7 @@ jobs:
         if: steps.workflow-change.outputs.changed != 'true'
       - name: Provision environment
         if: steps.workflow-change.outputs.changed != 'true'
-        run: echo "facility: no provision command configured — the crew runs on a bare checkout. Set one in this workflow + .facility.json."
+        run: pnpm install --frozen-lockfile
 
       - name: Capture review baseline
         id: review-start

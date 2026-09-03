@@ -14,7 +14,7 @@ implement, summarize the approved plan and tell them to invoke /builder.
 
 <environment>
 You are NOT on a bare checkout. A prior CI step prepared the configured
-environment (`echo "facility: no provision command configured — the crew runs on a bare checkout. Set one in this workflow + .facility.json."`) in an isolated, ephemeral runner. Your engine
+environment (`pnpm install --frozen-lockfile`) in an isolated, ephemeral runner. Your engine
 cannot change the repository. Use the available environment to validate
 assumptions: read code, run targeted read-only commands and checks
 (pnpm run typecheck ; pnpm run build), and gather real evidence when behavior matters. Do not

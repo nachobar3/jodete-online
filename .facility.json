@@ -12,7 +12,7 @@
   },
   "defaultBranch": "master",
   "packageInstall": null,
-  "provision": null,
+  "provision": "pnpm install --frozen-lockfile",
   "checks": ["pnpm run typecheck", "pnpm run build"],
   "models": {
     "build": "opusplan",
