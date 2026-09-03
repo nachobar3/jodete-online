@@ -243,16 +243,14 @@ button.mini.kick { width: auto; min-width: 28px; min-height: 28px; padding: 0 8p
   box-shadow: 0 10px 22px rgba(0,0,0,.6);
 }
 
-/* ===== Desktop: botones de acción al costado de la mesa (no debajo) ===== */
-@media (min-width: 820px) {
-  .game .hud {
-    position: fixed; right: 3vw; top: 50%; transform: translateY(-50%);
-    flex-direction: column; align-items: stretch; width: auto; max-width: none;
-    margin: 0; gap: 10px; z-index: 50;
-  }
-  .game .hud button { flex: 0 0 auto; min-width: 132px; padding: 12px 18px; }
-  .game .hud .link { align-self: center; }
+/* ===== Botones de acción al costado de la mesa (JS decide si hay espacio real) ===== */
+.game .hud-side {
+  position: fixed;
+  flex-direction: column; align-items: stretch; width: auto; max-width: none;
+  margin: 0; gap: 10px; z-index: 50;
 }
+.game .hud-side button { flex: 0 0 auto; min-width: 132px; padding: 12px 18px; }
+.game .hud-side .link { align-self: center; }
 
 /* HUD: botones justo debajo de la mano */
 .hud { display: flex; gap: 8px; padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px)); align-items: center; width: 100%; max-width: 640px; margin-top: 42px; }
