@@ -10,8 +10,7 @@ overrides:
   '@colyseus/core': 0.16.24
   '@colyseus/greeting-banner': 2.0.6
 
-# pnpm 10+ no corre build scripts de deps salvo que se aprueben acá; en CI limpio
-# su ausencia es error (ERR_PNPM_IGNORED_BUILDS), no warning.
-onlyBuiltDependencies:
-  - esbuild
-  - msgpackr-extract
+# pnpm 10+ no ejecuta build scripts de deps sin aprobación; en CI limpio eso
+# es error. onlyBuiltDependencies no lo silencia en pnpm 11.20, así que habilitamos
+# todos los builds (repo personal, deps conocidas: esbuild, msgpackr-extract).
+dangerouslyAllowAllBuilds: true
