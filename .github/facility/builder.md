@@ -17,7 +17,7 @@ and how far you got. A partial deliverable is a failure.
 
 <environment>
 You are NOT on a bare checkout. A prior CI step already installed dependencies
-and ran the provision command (`pnpm install --frozen-lockfile`), and you run with full
+and ran the provision command (`echo "facility: no provision command configured — the crew runs on a bare checkout. Set one in this workflow + .facility.json."`), and you run with full
 bypass permissions on an isolated, ephemeral runner. Never claim the
 environment is unavailable. In platform runs, Facility owns the final signed
 commit, push, and GitHub App pull-request call;
