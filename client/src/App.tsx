@@ -227,6 +227,10 @@ function computeHandLayout(n: number, vw: number): HandLayout {
   return { cards, scale, height, isMobile, width: fanW };
 }
 
+// Minimum horizontal space (px) needed to the right of the table for the side HUD column.
+// 132 (chip min-width) + 20 (gap) + 18 (breathing room)
+const SIDE_HUD_MIN = 170;
+
 export function App() {
   const [name, setName] = useState("");
   const [codeInput, setCodeInput] = useState("");
@@ -294,10 +298,11 @@ export function App() {
   const seatRefs = useRef<Record<string, HTMLElement | null>>({});
   const [sessionId, setSessionId] = useState("");
   const [vw, setVw] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
+  const [vh, setVh] = useState(() => (typeof window !== "undefined" ? window.innerHeight : 800));
 
-  // Reacciona al ancho de pantalla para recalcular el layout de la mano.
+  // Reacciona al ancho/alto de pantalla para recalcular layouts.
   useEffect(() => {
-    const on = () => setVw(window.innerWidth);
+    const on = () => { setVw(window.innerWidth); setVh(window.innerHeight); };
     window.addEventListener("resize", on);
     return () => window.removeEventListener("resize", on);
   }, []);
@@ -527,15 +532,16 @@ export function App() {
   }, [logEntries]);
 
   // Desktop: ubica los botones de acción pegados a la derecha de la mesa,
-  // alineados a su centro vertical (la mesa se corre según las filas de la mano).
+  // alineados a su centro vertical. Si no hay espacio suficiente (pantalla esbelta),
+  // cae al modo barra inferior que ya existe en mobile.
   const [hudPos, setHudPos] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
-    if (handLayout.isMobile) { setHudPos(null); return; }
     const el = tableRef.current;
-    if (!el) { setHudPos(null); return; }
+    if (handLayout.isMobile || !el) { setHudPos(null); return; }
     const r = el.getBoundingClientRect();
+    if (window.innerWidth - r.right < SIDE_HUD_MIN) { setHudPos(null); return; }
     setHudPos({ left: r.right + 20, top: r.top + r.height / 2 });
-  }, [handLayout.isMobile, handLayout.height, orderedHand.length, view?.phase, vw]);
+  }, [handLayout.isMobile, handLayout.height, orderedHand.length, view?.phase, vw, vh]);
 
   // Reubica la carta arrastrada según dónde se soltó. Busca la carta más cercana
   // en 2D (sirve para 1 o 2 filas) e inserta antes/después según el lado.
@@ -901,7 +907,7 @@ export function App() {
       </div>
 
       {/* HUD. Robar y Pasar comparten botón: aparece "Pasar" recién cuando ya robaste. */}
-      <div className="hud" style={hudPos ? { left: hudPos.left, top: hudPos.top, right: "auto", transform: "translateY(-50%)" } : undefined}>
+      <div className={`hud${hudPos ? " hud-side" : ""}`} style={hudPos ? { left: hudPos.left, top: hudPos.top, right: "auto", transform: "translateY(-50%)" } : undefined}>
         {view.pendingDraw === 0 && isMyTurn && view.drawnThisTurn ? (
           <button data-testid="pass-btn" className="chip neutral" onClick={() => send(ClientMsg.Pass)}>Pasar</button>
         ) : (
