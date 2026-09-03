@@ -5,6 +5,7 @@
   "description": "Jodete — juego de cartas multiplayer online de velocidad",
   "license": "MIT",
   "author": "Ignacio Barbero",
+  "packageManager": "pnpm@11.20.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/nachobar3/jodete-online.git"
