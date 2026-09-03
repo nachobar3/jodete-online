@@ -4,7 +4,7 @@
   "engines": ["claude-code", "codex"],
   "auth": {
     "provider": "anthropic",
-    "mode": "oauth",
+    "mode": "api-key",
     "codex": {
       "provider": "openai",
       "mode": "api-key"
@@ -12,7 +12,7 @@
   },
   "defaultBranch": "master",
   "packageInstall": null,
-  "provision": "pnpm install --frozen-lockfile",
+  "provision": null,
   "checks": ["pnpm run typecheck", "pnpm run build"],
   "models": {
     "build": "opusplan",
@@ -24,8 +24,8 @@
   "canaryBot": "facility-canary[bot]",
   "board": null,
   "executionLane": {
-    "architect": "repo",
-    "builder": "repo"
+    "architect": "platform",
+    "builder": "platform"
   },
   "modules": []
 }
