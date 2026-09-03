@@ -40,16 +40,23 @@ echo "==> [4/6] Instalando dependencias (como '$SERVICE_USER')"
 # paquete de plataforma y msgpackr usa fallback JS. Así el install es determinístico.
 ( cd "$APP_DIR" && sudo -u "$SERVICE_USER" env HOME="$APP_DIR" pnpm install --frozen-lockfile --ignore-scripts )
 
-echo "==> [5/6] Instalando y habilitando el servicio systemd"
+echo "==> [5/7] Instalando y habilitando el servicio systemd"
 install -m0644 "$APP_DIR/deploy/jodete.service" /etc/systemd/system/jodete.service
 systemctl daemon-reload
 systemctl enable jodete
 systemctl restart jodete
 
-echo "==> [6/6] Estado del servicio:"
+echo "==> [6/7] Activando auto-update (timer que hace pull+restart tras cada push)"
+install -m0644 "$APP_DIR/deploy/jodete-update.service" /etc/systemd/system/jodete-update.service
+install -m0644 "$APP_DIR/deploy/jodete-update.timer"   /etc/systemd/system/jodete-update.timer
+systemctl daemon-reload
+systemctl enable --now jodete-update.timer
+
+echo "==> [7/7] Estado del servicio:"
 sleep 1
 systemctl --no-pager --full status jodete | head -14 || true
 
 echo
 echo "Listo. El server escucha en localhost:2567 y arranca solo en cada boot."
+echo "Se auto-actualiza en ~1 min tras cada push a master (jodete-update.timer)."
 echo "Siguiente paso: exponerlo con Tailscale Funnel ->  sudo tailscale funnel --bg 2567"

@@ -1,0 +1,31 @@
+{
+  "facility": "0.3.0",
+  "engine": "claude-code",
+  "engines": ["claude-code", "codex"],
+  "auth": {
+    "provider": "anthropic",
+    "mode": "oauth",
+    "codex": {
+      "provider": "openai",
+      "mode": "api-key"
+    }
+  },
+  "defaultBranch": "master",
+  "packageInstall": null,
+  "provision": null,
+  "checks": ["pnpm run typecheck", "pnpm run build"],
+  "models": {
+    "build": "opusplan",
+    "review": "claude-sonnet-4-6",
+    "plan": "claude-opus-4-8",
+    "codexBuild": "gpt-5.6-sol",
+    "codexPlan": "gpt-5.6-sol"
+  },
+  "canaryBot": "facility-canary[bot]",
+  "board": null,
+  "executionLane": {
+    "architect": "repo",
+    "builder": "repo"
+  },
+  "modules": []
+}

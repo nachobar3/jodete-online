@@ -44,11 +44,38 @@ curl -I https://omarchy.tailcb513b.ts.net   # debería responder
 El juego está disponible solo si la PC está prendida. Desactivar el auto-suspend por
 inactividad (ver nota en la raíz del repo / config de Hyprland).
 
-## Actualizar el server a la última versión
+## Actualización automática (recomendado)
+
+El server se mantiene al día solo: un timer de systemd (`jodete-update.timer`)
+corre cada minuto, hace un `git fetch` barato y, **solo si hay commits nuevos** en
+`origin/master`, ejecuta pull + `pnpm install` + `systemctl restart jodete`. Así,
+**cada push a master queda aplicado en ~1 min** sin correr nada a mano (igual que
+el client, que Vercel redeploya solo).
+
+Corre como root (el propio systemd), así que no hace falta ningún `sudo` en curso
+ni reglas de sudoers: el único paso con privilegios es la activación única.
+
+Activarlo (una sola vez):
+```bash
+# 1) traé los archivos nuevos al server
+sudo bash /srv/jodete/deploy/update.sh
+# 2) instalá y arrancá el timer
+sudo bash /srv/jodete/deploy/enable-autoupdate.sh
+```
+(En instalaciones nuevas, `setup.sh` ya lo deja activado.)
+
+Ver estado / logs del auto-update:
+```bash
+systemctl list-timers jodete-update.timer     # próximo disparo
+journalctl -u jodete-update.service -f         # qué hizo en cada tick
+```
+
+## Actualizar el server a mano (forzado)
 ```bash
 sudo bash /srv/jodete/deploy/update.sh
 ```
-(El client se actualiza solo en Vercel al hacer push.)
+Fuerza pull + install + restart aunque no haya cambios. (El client se actualiza
+solo en Vercel al hacer push.)
 
 ## Operación
 ```bash

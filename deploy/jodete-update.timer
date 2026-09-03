@@ -1,0 +1,14 @@
+# Dispara jodete-update.service cada minuto (y una vez al arrancar la máquina).
+# Así el server self-host se mantiene al día solo: cada push a master queda
+# aplicado en ~1 minuto, sin correr nada a mano.
+[Unit]
+Description=Timer de auto-update del server de Jodete
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

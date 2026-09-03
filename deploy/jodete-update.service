@@ -1,0 +1,14 @@
+# Auto-update del server de Jodete.
+# Lo dispara jodete-update.timer cada minuto: hace un fetch barato y, si el
+# remoto (origin/master) trae commits nuevos, hace pull + pnpm install + restart.
+# Corre como root (necesita chown a 'jodete' y systemctl restart jodete).
+[Unit]
+Description=Jodete server auto-update (pull + restart si hay commits nuevos)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /srv/jodete/deploy/update.sh --if-changed
+# Un fallo puntual (sin red, etc.) no debe frenar el timer: reintenta en el próximo tick.
+SuccessExitStatus=0
