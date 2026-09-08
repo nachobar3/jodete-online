@@ -716,11 +716,14 @@ export function App() {
                 </span>
               </li>
             ))}
-            {botCount > 0 ? (
-              <li className="player-row" data-testid="bots-row">
-                <span>🤖 Bots<span className="badge bot">{botCount}</span></span>
-              </li>
-            ) : null}
+            <li
+              className="player-row"
+              data-testid="bots-row"
+              style={botCount > 0 ? undefined : { visibility: "hidden" }}
+              aria-hidden={botCount > 0 ? undefined : true}
+            >
+              <span>🤖 Bots<span className="badge bot">{botCount}</span></span>
+            </li>
           </ul>
         </div>
         <div className="card-panel">
